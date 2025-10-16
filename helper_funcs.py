@@ -3,25 +3,11 @@ import scipy.sparse.linalg as spla
 import numpy as np
 from const import *
 
-#simulation bounds for base grid
-Lx = WSe2.Lm
-Ly = WSe2.Lm 
-Nx = 80
-Ny = 80
-dx = Lx/Nx
-dy = Ly/Ny
-meV_si = (10**21)*hbar**2/(2*WSe2.M*eV)
-
-#implement bloch bounds
-"""
-def build_bloch(Nx,Ny,dx,dy,kx,ky,meVnm):
-
-    return 0
-    """
+#def bloch_bounds(material, Nx,Ny,dx,dy): #TODO 2d block bounds 
 
 
 
-#builds 2d triangular bounds
+
 
 def triangular_bounds(material, Nx,Ny,dx,dy): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
@@ -36,7 +22,40 @@ def triangular_bounds(material, Nx,Ny,dx,dy): #builds 2d triangular bounds
         V+= np.cos((Gx*X + Gy*Y))
     V = material.V0 * V/3
     #V = V.reshape(Nx*Ny)
-    return V
+    return X,Y,V
+
+def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y=1.):
+    N = Nx*Ny
+    neighbours = 5
+    nbt = neighbours*N
+    data, rows, cols = np.zeroes(nbt, dtype = np.int32), np.zeroes(nbt, dtype = np.int32), np.zeroes(nbt, dtype = np.complex128)
+    hb2m = (hbar**2 / (2.0 * m0*.6)) * 1e21 / 1.602176634e-19 #KE operator
+    
+    p=0
+
+    for x in range(Nx):
+        for y in range(Ny):
+            idx = x*Ny + y
+
+            #diag
+            rows[p] = idx
+            cols[p] = idx
+            data[p] = center + V_vec[idx]
+            p+=1
+
+            #-x neighbour
+            xp = (x+1)%Nx
+            dxp = x*Ny + y
+            phase = np.conj(phase_x) if x == 0 else 1.0
+            rows[p] = idx
+            cols[p] = dxp
+            data[p] = neigh_x*phase
+            p+=1
+
+            #+x neighbour
+            xp = (x+1)%Nx
+            dxp = x*Nx-y
+            
 
 
 
