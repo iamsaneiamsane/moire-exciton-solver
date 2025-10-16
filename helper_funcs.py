@@ -1,6 +1,7 @@
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import numpy as np
+from qutip import basis,sigmax,sigmay,sigmaz,sigmam,qeye,mesolve,expect,Qobj
 from const import *
 
 #def bloch_bounds(material, Nx,Ny,dx,dy): #TODO 2d block bounds 
@@ -28,7 +29,7 @@ def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y
     N = Nx*Ny
     neighbours = 5
     nbt = neighbours*N
-    data, rows, cols = np.zeroes(nbt, dtype = np.int32), np.zeroes(nbt, dtype = np.int32), np.zeroes(nbt, dtype = np.complex128)
+    cols, rows, data = np.zeros(nbt, dtype = np.int32), np.zeros(nbt, dtype = np.int32), np.zeros(nbt, dtype = np.complex128)
     hb2m = (hbar**2 / (2.0 * m0*.6)) * 1e21 / 1.602176634e-19 #KE operator
     
     p=0
@@ -45,16 +46,43 @@ def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y
 
             #-x neighbour
             xp = (x+1)%Nx
-            dxp = x*Ny + y
-            phase = np.conj(phase_x) if x == 0 else 1.0
+            dxp = xp*Ny + y
+            phase = phase_x if x == 0 else 1.0
             rows[p] = idx
             cols[p] = dxp
             data[p] = neigh_x*phase
             p+=1
 
             #+x neighbour
-            xp = (x+1)%Nx
-            dxp = x*Nx-y
+            xm = (x-1)%Nx
+            dxm = xm*Nx+y
+            phase = np.conj(phase_x) if x == 0 else 1.0
+            rows[p] = idx
+            cols[p] = dxm
+            data[p] = neigh_x*phase
+            p+=1
+
+            #+y
+            yp = (y+1)%Nx
+            dyp = x*Ny+yp
+            phase = phase_y if y == Ny-1 else 1.0
+            rows[p] = idx
+            cols[p] = dyp
+            data[p] = neigh_y*phase
+            p+=1
+
+            #-y
+            ym = (y-1)%Ny
+            dym = x*Ny + ym
+            phase = np.conj(phase_y) if y == 0 else 1.0
+            rows[p] = idx
+            cols[p] = dym
+            data[p] = neigh_y*phase
+            p+=1
+    H = sp.csr_matrix((data,(rows,cols)),shape=(N,N))
+    return H
+
+
             
 
 
