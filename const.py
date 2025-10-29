@@ -8,7 +8,7 @@ Ry = 13.605693009 #ev
 
 #WSe2 constants
 class WSe2:
-    a = 3.3 #angstroms
+    a = .33 #nm
     me = 0.2*m0 #eV .15-.25
     M = 0.6*m0 #eV, 
     Eb = 0.45 #eV, .3-.6 depending on env
@@ -17,8 +17,8 @@ class WSe2:
     Lm = 10 #nm, mismatch, test 5-30
     V0 = 30 #meV, 10-50 based on environment
 
-class Ws2: #UPDATE ALL PARAMETERS
-    a = 3.157 #angstroms
+class WS2: #UPDATE ALL PARAMETERS
+    a = .3157 #nm
     me = 0.2*m0 #eV .15-.25
     M = 0.6*m0 #eV, 
     Eb = 0.45 #eV, .3-.6 depending on env
