@@ -24,7 +24,7 @@ center = -2*(neigh_x + neigh_y)
 phase_x = np.exp(1j*0.0)
 phase_y = np.exp(1j*0.0)
 
-
+'''
 X,Y,V = triangular_bounds(WSe2, Nx, Ny, dx, dy)
 V_vec = V.ravel()
 print("bounds done")
@@ -51,38 +51,63 @@ visualize_bandstructure(bands,labels,Nk=20)
 visualize_bilayer_3d(WSe2, WS2, 3.46, cells=2)
 
 '''
-H = build_hamiltonian(V_vec, Nx,Ny,neigh_x, neigh_y, center, WSe2, phase_x, phase_y)
+#H = build_h_bilayer( Nx,Ny,WSe2, WS2, .04, dx, dy, phase_x, phase_y)
 print("hamiltonian done")
 
-E,psi = eigsh(H,k=5, which="SM", mode='normal')
+#X,Y,V = triangular_bounds(WSe2, Nx, Ny, dx, dy)
+##E,psi = eigsh(H,k=5, which="SM", mode='normal', tol = 1e-4)
 
 #eigX = np.random.rand(H.shape[0], 4)
 #E, psi = lobpcg(H, eigX, largest=False, tol=1e-8)
-
+for t in [0.001, 0.005, 0.01, 0.02, 0.05]:
+    H = build_h_bilayer(Nx, Ny, WSe2, WS2, t, dx, dy, phase_x, phase_y)
+    E, psi = spla.eigsh(H, k=4, which='SA')
+    psi_n = psi[:, 0]
+    N_layer = Nx * Ny
+    w1 = np.sum(np.abs(psi_n[:N_layer])**2)
+    w2 = np.sum(np.abs(psi_n[N_layer:])**2)
+    print(f"t = {t:.3f} eV → layer weights: {w1:.3f}, {w2:.3f}")
 
 print("eig done")
 
 
 n = 0  # Index of eigenstate
-psi_n = np.real(psi[:, n]).reshape((Nx, Ny))
+psi_n = np.real(psi[:, n])
+psi1 = psi_n[:Nx*Ny].reshape((Nx,Ny))
+psi2 = psi_n[Nx*Ny:].reshape((Nx,Ny))
 prob_density = psi_n**2
-phase = np.angle(psi[:, n].reshape((Nx, Ny)))
+phase1 = np.angle(psi1[:, n])
+phase2 = np.angle(psi2[:, n])
+prob_layer1 = np.sum(np.abs(psi_n[:Nx*Ny])**2)
+prob_layer2 = np.sum(np.abs(psi_n[Nx*Ny:])**2)
+print(f"Layer 1 weight: {prob_layer1:.3f}, Layer 2 weight: {prob_layer2:.3f}")
+
+
+
+
+plt.figure(figsize=(10,4))
+plt.subplot(1,2,1)
+plt.imshow(psi1, cmap='RdBu_r')
+plt.title('Layer 1 wavefunction')
+
+plt.subplot(1,2,2)
+plt.imshow(psi2, cmap='RdBu_r')
+plt.title('Layer 2 wavefunction')
+plt.show()
 
 
 #moire_qubit(E,psi)
 
 visualize_twisted_bilayer(WSe2, WS2, 2, cells=10)
 
-visualize_bilayer_3d(X,Y,V,WSe2, WS2, 2, cells=cells)
-
 fig = plt.figure(figsize=(18, 12))
 grid_spec = fig.add_gridspec(2, 2)
 
 #2D Potential Landscape
 ax2 = fig.add_subplot(grid_spec[0, 0])
-im2 = ax2.pcolormesh(V, cmap='viridis', shading='auto')
-fig.colorbar(im2, ax=ax2, label='Potential Energy (eV)')
-ax2.set_title('Moiré Potential Landscape')
+im2 = ax2.imshow(phase2, cmap='twilight', origin='lower')
+fig.colorbar(im2, ax=ax2, label='Phase (radians)')
+ax2.set_title('Phase distribution of eigenstate')
 ax2.set_xlabel('x-grid index')
 ax2.set_ylabel('y-grid index')
 
@@ -94,6 +119,7 @@ ax3.set_title(f'Eigenstate {n}, E = {E[n]:.3f} eV')
 ax3.set_xlabel('x-grid index')
 ax3.set_ylabel('y-grid index')
 
+'''
 #Wavefunction Density over Potential
 ax4 = fig.add_subplot(grid_spec[1, 0])
 contour_base = ax4.contourf(V, cmap='Greys', alpha=0.6)
@@ -102,10 +128,11 @@ fig.colorbar(contour_overlay, ax=ax4, label='|ψ|²')
 ax4.set_title(f'Wavefunction Density over Moiré Potential\nE = {E[n]:.3f} eV')
 ax4.set_xlabel('x-grid index')
 ax4.set_ylabel('y-grid index')
+'''
 
 #Phase Distribution
 ax5 = fig.add_subplot(grid_spec[1, 1])
-im5 = ax5.imshow(phase, cmap='twilight', origin='lower')
+im5 = ax5.imshow(phase1, cmap='twilight', origin='lower')
 fig.colorbar(im5, ax=ax5, label='Phase (radians)')
 ax5.set_title('Phase distribution of eigenstate')
 ax5.set_xlabel('x-grid index')
@@ -113,7 +140,7 @@ ax5.set_ylabel('y-grid index')
 
 plt.tight_layout()
 plt.show()
-'''
+
 
 '''
 fig = plt.figure(figsize=(10, 8))

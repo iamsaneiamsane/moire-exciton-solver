@@ -13,13 +13,13 @@ from matplotlib.patches import RegularPolygon
 hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 1e-18)
 
 
-def triangular_bounds(material, Nx,Ny,dx,dy, theta=0.0): #builds 2d triangular bounds
+def triangular_bounds(material, Nx,Ny,dx,dy, theta_deg=0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
     ys = (np.arange(Ny)+ .5)*dy
 
     X,Y = np.meshgrid(xs,ys,indexing="ij")
 
-    theta_rad = np.radians(theta)
+    theta_rad = np.radians(theta_deg)
     Xr = X*np.cos(theta_rad) - Y*np.cos(theta_rad)
     Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
@@ -52,7 +52,7 @@ def hex_lattice(a, cells, angle=0, offset=(0, 0)):
 
 
 @njit(parallel=True) 
-def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y=1.):
+def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=np.complex128(1.0+0j), phase_y=np.complex128(1.0+0j)):
     N = Nx*Ny
     neighbours = 5
     nbt = neighbours*N
@@ -166,6 +166,8 @@ def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
 def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,theta=0.):
     X, Y, V1 = triangular_bounds(WSe2, Nx, Ny, dx, dy, theta_deg=0.0)
     _, _, V2 = triangular_bounds(WS2, Nx, Ny, dx, dy, theta_deg=theta)
+    V1_ = V1.ravel()
+    V2_ = V2.ravel()
 
     hb2m1 = hb2mb(material1.M)
     hb2m2 = hb2mb(material2.M)
@@ -179,8 +181,8 @@ def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,thet
     center1 = -2*(neigh_x1+neigh_y1)
     center2 = -2*(neigh_x2+neigh_y2)
 
-    rows1,cols1,data1 = build_hamiltonian_numba(V1,Nx,Ny,neigh_x1,neigh_y1,center1,phase_x,phase_y)
-    rows2,cols2,data2 = build_hamiltonian_numba(V2,Nx,Ny,neigh_x2,neigh_y2,center2,phase_x,phase_y)
+    rows1,cols1,data1 = build_hamiltonian_numba(np.real(V1_),Nx,Ny,float(neigh_x1),float(neigh_y1),float(center1),phase_x,phase_y)
+    rows2,cols2,data2 = build_hamiltonian_numba(np.real(V2_),Nx,Ny,float(neigh_x2),float(neigh_y2),float(center2),phase_x,phase_y)
 
     H1 = sp.csr_matrix((data1,(rows1,cols1)), shape=(Nx*Ny, Nx*Ny))
     H2 = sp.csr_matrix((data2,(rows2,cols2)), shape=(Nx*Ny, Nx*Ny))
