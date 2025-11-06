@@ -10,14 +10,18 @@ import matplotlib.cm as cm
 from matplotlib.patches import RegularPolygon
 
 
-hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 10e-18)
+hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 1e-18)
 
 
-def triangular_bounds(material, Nx,Ny,dx,dy): #builds 2d triangular bounds
+def triangular_bounds(material, Nx,Ny,dx,dy, theta=0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
     ys = (np.arange(Ny)+ .5)*dy
 
     X,Y = np.meshgrid(xs,ys,indexing="ij")
+
+    theta_rad = np.radians(theta)
+    Xr = X*np.cos(theta_rad) - Y*np.cos(theta_rad)
+    Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
     Gmag = 4*np.pi/(np.sqrt(3)*material.a)
     theta = np.array([0,2*np.pi/3, 4*np.pi/3])
@@ -25,7 +29,7 @@ def triangular_bounds(material, Nx,Ny,dx,dy): #builds 2d triangular bounds
     G_vec = np.array([[Gmag, 0.0], [Gmag*np.cos(2*np.pi/3), Gmag*np.sin(2*np.pi/3)], [Gmag*np.cos(4*np.pi/3), Gmag*np.sin(4*np.pi/3)]])
     
     for i,j in G_vec:
-        V+= np.cos(i*X + j*Y)
+        V+= np.cos(i*Xr + j*Yr)
 
     V = material.V0 * V/3
     #V = V.reshape(Nx*Ny)
@@ -47,10 +51,8 @@ def hex_lattice(a, cells, angle=0, offset=(0, 0)):
     return np.array(xs), np.array(ys)
 
 
-
-
 @njit(parallel=True) 
-def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, hb2M, phase_x=1., phase_y=1.):
+def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y=1.):
     N = Nx*Ny
     neighbours = 5
     nbt = neighbours*N
@@ -70,23 +72,23 @@ def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, hb2M, phase_x
             #-x neighbour
             xp = (x+1)%Nx
             dxp = xp*Ny + y
-            phase = phase_x if x == 0 else 1.0
+            phase = phase_x if xp == 0 else 1.0
             rows[p+1] = idx
             cols[p+1] = dxp
             data[p+1] = neigh_x*phase
     
             #+x neighbour
             xm = (x-1)%Nx
-            dxm = xm*Nx+y
+            dxm = xm*Ny+y
             phase = np.conj(phase_x) if x == 0 else 1.0
             rows[p+2] = idx
             cols[p+2] = dxm
             data[p+2] = neigh_x*phase
         
             #+y
-            yp = (y+1)%Nx
+            yp = (y+1)%Ny
             dyp = x*Ny+yp
-            phase = phase_y if y == Ny-1 else 1.0
+            phase = phase_y if yp == 0 else 1.0
             rows[p+3] = idx
             cols[p+3] = dyp
             data[p+3] = neigh_y*phase
@@ -104,9 +106,9 @@ def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, hb2M, phase_x
 
 
 def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, material = WSe2, phase_x=1., phase_y=1.): #real space hamiltonian
-    hb2m = hb2mb(material.M)
-    rows, cols, data = build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, hb2m, phase_x=1., phase_y=1.)
+    rows, cols, data = build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y=1.)
     H = sp.csr_matrix((data,(rows,cols)),shape=(Nx*Ny,Nx*Ny))
+
     return H
 
 def build_Hk_bloch(V_vec, Nx,Ny,dx,dy,material,kx=0.0,ky=0.0):
@@ -116,20 +118,26 @@ def build_Hk_bloch(V_vec, Nx,Ny,dx,dy,material,kx=0.0,ky=0.0):
     neigh_y = -hb2m/dy**2
     center = -2*(neigh_x + neigh_y)
 
-    phase_x = np.exp(1j*kx*Nx*dx)
-    phase_y = np.exp(1j*ky*Ny*dy)
+    phase_x = np.exp(1j*kx*dx)
+    phase_y = np.exp(1j*ky*dy)
 
-    rows,cols,data = build_hamiltonian_numba(V_vec, Nx,Ny,neigh_x,neigh_y,center,hb2m,phase_x,phase_y)
+    rows,cols,data = build_hamiltonian_numba(V_vec, Nx,Ny,neigh_x,neigh_y,center,phase_x,phase_y)
 
     H = sp.csr_matrix((data,(rows,cols)),shape = (Nx*Ny, Nx*Ny))
+
     return H
 
-def build_bandstructure(V_vec, Nx,Ny,dx,dy,material,k_path,n_eigs = 5):
+def build_bandstructure(V_vec, Nx,Ny,dx,dy,material,k_path,n_eigs = 6):
     bands = np.zeros((len(k_path), n_eigs))
 
     for i,(x,y) in enumerate(k_path):
         Hk = build_Hk_bloch(V_vec,Nx,Ny,dx,dy,material,x,y)
-        E, psi = spla.eigsh(Hk,k=n_eigs, which='SM', maxiter=10000, tol = 1e-9)
+        try:
+            E, psi = spla.eigsh(Hk,k=n_eigs, which='SA', maxiter=50000, tol = 1e-4)
+        except Exception as e:
+            print(f"[Warning] eigsh failed at k-point {i}, switching to eigs. Error: {e}")
+            E, psi = spla.eigs(Hk, k=n_eigs, which='SR', maxiter=50000, tol=1e-4)
+            E = E.real
         bands[i,:] = np.sort(E.real)
     
     return bands
@@ -137,7 +145,7 @@ def build_bandstructure(V_vec, Nx,Ny,dx,dy,material,k_path,n_eigs = 5):
 def segment(p1,p2,N): #helper for kpath
     return [tuple(p1+(p2-p1)*t) for t in np.linspace(0,1,N,endpoint=False)]
 
-def build_kpath(material, Nk=40):
+def build_kpath(material, Nk=20):
     a = material.a
     G = np.array([0,0]) #gamma point
     K = np.array([4*np.pi/(3*a),0])
@@ -154,16 +162,36 @@ def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
     for i,kx in enumerate(kx_list):
         Hk = build_hamiltonian(Hk, kx=kx, ky=ky, **H_kwargs)
 '''
-#k space
-'''
-def build_Hk(kx,ky, neigh_x, neigh_y, center):
-    Hk = center + neigh_x*np.exp(-1j*kx) + np.conj(neigh_x)*np.exp(1j*kx) + neigh_y*np.exp(-1j*ky) + np.conj(neigh_y)*np.exp(1j*ky)
-    return Hk
-'''
 
+def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,theta=0.):
+    X, Y, V1 = triangular_bounds(WSe2, Nx, Ny, dx, dy, theta_deg=0.0)
+    _, _, V2 = triangular_bounds(WS2, Nx, Ny, dx, dy, theta_deg=theta)
 
+    hb2m1 = hb2mb(material1.M)
+    hb2m2 = hb2mb(material2.M)
 
+    neigh_x1 = -hb2m1/dx**2
+    neigh_x2 = -hb2m2/dx**2
 
+    neigh_y1 = -hb2m1/dy**2
+    neigh_y2 = -hb2m2/dy**2
+
+    center1 = -2*(neigh_x1+neigh_y1)
+    center2 = -2*(neigh_x2+neigh_y2)
+
+    rows1,cols1,data1 = build_hamiltonian_numba(V1,Nx,Ny,neigh_x1,neigh_y1,center1,phase_x,phase_y)
+    rows2,cols2,data2 = build_hamiltonian_numba(V2,Nx,Ny,neigh_x2,neigh_y2,center2,phase_x,phase_y)
+
+    H1 = sp.csr_matrix((data1,(rows1,cols1)), shape=(Nx*Ny, Nx*Ny))
+    H2 = sp.csr_matrix((data2,(rows2,cols2)), shape=(Nx*Ny, Nx*Ny))
+
+    T = sp.identity(Nx*Ny, format='csr')*t
+
+    top = sp.hstack([H1,T])
+    bottom = sp.hstack([T.conjugate().transpose(), H2])
+    H_bilayer = sp.vstack([top,bottom])
+
+    return H_bilayer
 
 #visualize
 
@@ -184,15 +212,29 @@ def visualize_twisted_bilayer(material1, material2, angle, cells=100):
     ax.axis('off')
     plt.show()
 
-def visualize_bilayer_3d(X,Y,V,material1,material2,angle_deg,cells=4):
+def visualize_bilayer_3d(material1,material2,angle_deg,cells=4, V0=0.05, Nx=50,Ny = 50):
+    xs = (np.arange(Nx) + 0.5) * material1.a 
+    ys = (np.arange(Ny) + 0.5) * material1.a 
+    X, Y = np.meshgrid(xs, ys, indexing='ij')
+    Gmag = 4 * np.pi / (np.sqrt(3) * material1.a) * V0
+    G_vec = np.array([
+        [Gmag, 0],
+        [Gmag * np.cos(2*np.pi/3), Gmag * np.sin(2*np.pi/3)],
+        [Gmag * np.cos(4*np.pi/3), Gmag * np.sin(4*np.pi/3)]
+    ])
+    V = np.zeros_like(X)
+    for gx, gy in G_vec:
+        V += np.cos(gx*X + gy*Y)
+    V *= material1.V0/3
+
+    x_center = (X.max() + X.min())/2
+    y_center = (Y.max() + Y.min())/2
+
     fig = plt.figure(figsize=(8, 6))
     ax = fig.add_subplot(111, projection='3d')
     ax.plot_surface(X, Y, V, cmap='viridis', edgecolor='none', alpha=0.85)
-    a1 = material1.a*.1
-    a2 = material2.a*.1  
-
-    x_center = (X.max() + X.min()) / 2
-    y_center = (Y.max() + Y.min()) / 2
+    a1 = material1.a
+    a2 = material2.a
 
     
     xs1, ys1 = hex_lattice(a1, cells*10, angle=0, offset=(x_center, y_center))
@@ -202,8 +244,8 @@ def visualize_bilayer_3d(X,Y,V,material1,material2,angle_deg,cells=4):
     zs1 = np.zeros_like(xs1)
     zs2 = np.full_like(xs2, 10.0)
 
-    ax.scatter(xs1, ys1, zs1, c='blue', s=10, label=material1.__name__)
-    ax.scatter(xs2, ys2, zs2, c='red', s=10, label=f"{material2.__name__} ({angle_deg}°)")
+    ax.scatter(xs1, ys1, zs1, c='blue', s=3, label=material1.__name__)
+    ax.scatter(xs2, ys2, zs2, c='red', s=3, label=f"{material2.__name__} ({angle_deg}°)")
     ax.set_title("3D Surface Plot of Triangular Potential")
     ax.set_zlim(-100, 100) 
     ax.set_xlabel('x(nm)')

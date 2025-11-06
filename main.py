@@ -13,10 +13,10 @@ os.environ["OMP_NUM_THREADS"] = "8"
 cells = 1
 Lx = WSe2.Lm*cells
 Ly = WSe2.Lm*cells
-Nx = 60*cells
-Ny = 60*cells
-dx = Lx/Nx
-dy = Ly/Ny
+Nx = 120*cells
+Ny = 120*cells
+dx = 10/Nx
+dy = 10/Ny
 meV_si = (10**18)*hbar**2/(2*WSe2.M*eV)
 
 neigh_x = neigh_y = -meV_si/dx**2
@@ -28,12 +28,28 @@ phase_y = np.exp(1j*0.0)
 X,Y,V = triangular_bounds(WSe2, Nx, Ny, dx, dy)
 V_vec = V.ravel()
 print("bounds done")
+print("neigh_x, neigh_y:", neigh_x, neigh_y)
+print("center term:", center)
+print("Potential range:", np.min(V_vec), np.max(V_vec))
 
-kpath, labels = build_kpath(WSe2, Nk=15)
+
+kpath, labels = build_kpath(WSe2, Nk=20)
 bands = build_bandstructure(V_vec, Nx,Ny,dx,dy,WSe2,kpath)
+valence_idx = 1   
+conduction_idx = 2
+val_max = bands[:, valence_idx].max()
+cond_min = bands[:, conduction_idx].min()
+print("valence max:", val_max, "cond min:", cond_min, "gap (eV):", cond_min - val_max)
 
-visualize_bandstructure(bands,labels,Nk=15)
-visualize_bilayer_3d(X,Y,V,WSe2, WS2, 2, cells=cells)
+# bandwidth of band n
+for n in range(bands.shape[1]):
+    print(f"band {n} bandwidth (eV):", bands[:,n].max() - bands[:,n].min())
+
+
+
+visualize_bandstructure(bands,labels,Nk=20)
+visualize_bilayer_3d(WSe2, WS2, 3.46, cells=2)
+
 '''
 H = build_hamiltonian(V_vec, Nx,Ny,neigh_x, neigh_y, center, WSe2, phase_x, phase_y)
 print("hamiltonian done")
