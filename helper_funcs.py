@@ -13,13 +13,14 @@ from matplotlib.patches import RegularPolygon
 hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 1e-18)
 
 
+
 def triangular_bounds(material, Nx,Ny,dx,dy, theta_deg=0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
     ys = (np.arange(Ny) + .5)*dy
 
     X,Y = np.meshgrid(xs,ys,indexing="ij")
 
-    theta_rad = np.radians(theta_deg)
+    theta_rad = np.radians(float(theta_deg))
     Xr = X*np.cos(theta_rad) - Y*np.cos(theta_rad)
     Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
@@ -162,7 +163,7 @@ def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
         Hk = build_hamiltonian(Hk, kx=kx, ky=ky, **H_kwargs)
 '''
 
-def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,theta=0., eps_r = 5, rank=50):
+def build_h_bilayer(Nx,Ny,material1,material2,dx,dy,phase_x=1.,phase_y=1.,theta=3., eps_r = 5, rank=50):
     Xe, Ye, Ve = triangular_bounds(material1, Nx, Ny, dx, dy, theta_deg=0.0)
     Xh, Yh, Vh = triangular_bounds(material2, Nx, Ny, dx, dy, theta_deg=theta)
     Ve_ = Ve.ravel()
@@ -183,6 +184,8 @@ def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,thet
 
     rows1,cols1,data1 = build_hamiltonian_numba(np.real(Ve_),Nx,Ny,float(neigh_x1),float(neigh_y1),float(center1),phase_x,phase_y)
     rows2,cols2,data2 = build_hamiltonian_numba(np.real(Vh_),Nx,Ny,float(neigh_x2),float(neigh_y2),float(center2),phase_x,phase_y)
+    data1 = np.clip(data1, -1e4, 1e4)
+    data2 = np.clip(data2, -1e4, 1e4)
 
     He = sp.csr_matrix((data1,(rows1,cols1)), shape=(Nx*Ny, Nx*Ny))
     Hh = sp.csr_matrix((data2,(rows2,cols2)), shape=(Nx*Ny, Nx*Ny))
@@ -231,6 +234,24 @@ def exciton_solver(Nx,Ny,He,Hh,Uk,Vk,n_eigs=5):
     
 
 #visualize
+
+def extract_exciton_layer_weights(psi_exciton, Nx, Ny):
+    Nstates = Nx * Ny
+    n_eigs = psi_exciton.shape[1]
+
+    weights_e = np.zeros(n_eigs)
+    weights_h = np.zeros(n_eigs)
+    for i in range(n_eigs):
+        psi_n = psi_exciton[:, i]
+        psi_e = psi_n[:Nstates]
+        psi_h = psi_n[Nstates:]
+        w_e = np.sum(np.abs(psi_e)**2)
+        w_h = np.sum(np.abs(psi_h)**2)
+        total = w_e + w_h
+        weights_e[i] = w_e / total
+        weights_h[i] = w_h / total
+
+    return weights_e, weights_h
 
 
 

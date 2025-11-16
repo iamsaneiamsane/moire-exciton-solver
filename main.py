@@ -17,7 +17,7 @@ Nx = 20*cells
 Ny = 20*cells
 dx = 10/Nx
 dy = 10/Ny
-meV_si = (10**18)*hbar**2/(2*WSe2.M*eV)
+meV_si = (10**18)*hbar**2/(2*WSe2.M*m0*eV)
 
 neigh_x = neigh_y = -meV_si/dx**2
 center = -2*(neigh_x + neigh_y)
@@ -28,14 +28,22 @@ phase_y = np.exp(1j*0.0)
 for t in [0.05,0.1, 1]:
     H = build_h_bilayer(Nx, Ny, WSe2, WS2, t, dx, dy, phase_x, phase_y)
     E, psi = exciton_solver(**H, n_eigs=5)
+    Ee = spla.eigsh(H['He'], k=1, which='SA', return_eigenvectors=False)[0]
+    Ev = spla.eigsh(H['Hh'], k=1, which='SA', return_eigenvectors=False)[0]
+    print("single-particle gap =", Ee - Ev, "eV") 
+    
     psi_n = psi[:, 0]
     N_layer = Nx * Ny
     w1 = np.sum(np.abs(psi_n[:N_layer])**2)
     w2 = np.sum(np.abs(psi_n[N_layer:])**2)
     print(f"t = {t:.3f} eV: layer weights: {w1:.3f}, {w2:.3f}")
+    we,wh = extract_exciton_layer_weights(psi, Nx,Ny)
+
+    for i, (e,h) in enumerate(zip(we,wh)):
+        print(f"State:{i}: E={E[i]:.3f} eV, w_e={e:.3f}, w_h={h:.3f}, sum={e+h:.3f}")
 
 print("eig done")
-
+'''
 n = 0  # Index of eigenstate
 psi_n = np.real(psi[:, n])
 psi1 = psi_n[:Nx*Ny].reshape((Nx**2,Ny**2))
@@ -47,9 +55,6 @@ prob_layer1 = np.sum(np.abs(psi_n[:Nx*Ny])**2)
 prob_layer2 = np.sum(np.abs(psi_n[Nx*Ny:])**2)
 print(f"Layer 1 weight: {prob_layer1:.3f}, Layer 2 weight: {prob_layer2:.3f}")
 
-
-
-
 plt.figure(figsize=(10,4))
 plt.subplot(1,2,1)
 plt.imshow(psi1, cmap='RdBu_r')
@@ -59,6 +64,13 @@ plt.subplot(1,2,2)
 plt.imshow(psi2, cmap='RdBu_r')
 plt.title('Layer 2 wavefunction')
 plt.show()
+'''
+
+
+
+
+
+
 
 
 '''

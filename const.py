@@ -8,14 +8,14 @@ Ry = 13.605693009 #ev
 
 #WSe2 constants
 class WSe2:
-    a = .33 #nm
+    a = .332 #nm
     me = 0.2*m0 #eV .15-.25
-    M = 0.6*m0 #eV, 
+    M = 0.36*m0 #eV, 
     Eb = 0.45 #eV, .3-.6 depending on env
     r0 = 4.5 #nm, 4-5
     dielec = 2.25 #1-4.5 based on env, tune further
     Lm = 10 #nm, mismatch, test 5-30
-    V0 = 30 #meV, 10-50 based on environment
+    V0 = .08 #eV
 
 class WS2: #UPDATE ALL PARAMETERS
     a = .3157 #nm
@@ -25,7 +25,7 @@ class WS2: #UPDATE ALL PARAMETERS
     r0 = 4.5 #nm, 4-5
     dielec = 2.25 #1-4.5 based on env, tune further
     Lm = 10 #nm, mismatch, test 5-30
-    V0 = 30 #meV, 10-50 based on environment
+    V0 = .08 #eV
 
 class MoS2:
     a= 3.16
