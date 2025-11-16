@@ -15,7 +15,7 @@ hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 1e-18)
 
 def triangular_bounds(material, Nx,Ny,dx,dy, theta_deg=0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
-    ys = (np.arange(Ny)+ .5)*dy
+    ys = (np.arange(Ny) + .5)*dy
 
     X,Y = np.meshgrid(xs,ys,indexing="ij")
 
@@ -24,7 +24,6 @@ def triangular_bounds(material, Nx,Ny,dx,dy, theta_deg=0.0): #builds 2d triangul
     Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
     Gmag = 4*np.pi/(np.sqrt(3)*material.a)
-    theta = np.array([0,2*np.pi/3, 4*np.pi/3])
     V = np.zeros_like(X)
     G_vec = np.array([[Gmag, 0.0], [Gmag*np.cos(2*np.pi/3), Gmag*np.sin(2*np.pi/3)], [Gmag*np.cos(4*np.pi/3), Gmag*np.sin(4*np.pi/3)]])
     
@@ -105,7 +104,7 @@ def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=np.co
 
 
 
-def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, material = WSe2, phase_x=1., phase_y=1.): #real space hamiltonian
+def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, material = WSe2, phase_x=1., phase_y=1.): #real space hamiltonian for single particle
     rows, cols, data = build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=1., phase_y=1.)
     H = sp.csr_matrix((data,(rows,cols)),shape=(Nx*Ny,Nx*Ny))
 
@@ -163,11 +162,12 @@ def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
         Hk = build_hamiltonian(Hk, kx=kx, ky=ky, **H_kwargs)
 '''
 
-def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,theta=0.):
-    X, Y, V1 = triangular_bounds(WSe2, Nx, Ny, dx, dy, theta_deg=0.0)
-    _, _, V2 = triangular_bounds(WS2, Nx, Ny, dx, dy, theta_deg=theta)
-    V1_ = V1.ravel()
-    V2_ = V2.ravel()
+def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,theta=0., eps_r = 5, rank=50):
+    Xe, Ye, Ve = triangular_bounds(material1, Nx, Ny, dx, dy, theta_deg=0.0)
+    Xh, Yh, Vh = triangular_bounds(material2, Nx, Ny, dx, dy, theta_deg=theta)
+    Ve_ = Ve.ravel()
+    Vh_ = Vh.ravel()
+    Xef,Yef,Xhf,Yhf = Xe.ravel(), Ye.ravel(), Xh.ravel(), Yh.ravel()
 
     hb2m1 = hb2mb(material1.M)
     hb2m2 = hb2mb(material2.M)
@@ -181,19 +181,54 @@ def build_h_bilayer(Nx,Ny,material1,material2,t,dx,dy,phase_x=1.,phase_y=1.,thet
     center1 = -2*(neigh_x1+neigh_y1)
     center2 = -2*(neigh_x2+neigh_y2)
 
-    rows1,cols1,data1 = build_hamiltonian_numba(np.real(V1_),Nx,Ny,float(neigh_x1),float(neigh_y1),float(center1),phase_x,phase_y)
-    rows2,cols2,data2 = build_hamiltonian_numba(np.real(V2_),Nx,Ny,float(neigh_x2),float(neigh_y2),float(center2),phase_x,phase_y)
+    rows1,cols1,data1 = build_hamiltonian_numba(np.real(Ve_),Nx,Ny,float(neigh_x1),float(neigh_y1),float(center1),phase_x,phase_y)
+    rows2,cols2,data2 = build_hamiltonian_numba(np.real(Vh_),Nx,Ny,float(neigh_x2),float(neigh_y2),float(center2),phase_x,phase_y)
 
-    H1 = sp.csr_matrix((data1,(rows1,cols1)), shape=(Nx*Ny, Nx*Ny))
-    H2 = sp.csr_matrix((data2,(rows2,cols2)), shape=(Nx*Ny, Nx*Ny))
+    He = sp.csr_matrix((data1,(rows1,cols1)), shape=(Nx*Ny, Nx*Ny))
+    Hh = sp.csr_matrix((data2,(rows2,cols2)), shape=(Nx*Ny, Nx*Ny))
 
-    T = sp.identity(Nx*Ny, format='csr')*t
+    Nstates = Nx*Ny
 
-    top = sp.hstack([H1,T])
-    bottom = sp.hstack([T.conjugate().transpose(), H2])
-    H_bilayer = sp.vstack([top,bottom])
+    #low rank approx from paper
+    D = np.sqrt((Xef[:,None] - Xhf[None,:])**2 + (Yef[:,None]-Yhf[None,:])**2)
+    r = np.maximum(D,.5)
 
-    return H_bilayer
+    Vij = -14.4/(eps_r*r*1000)
+
+    U,S,Vt=np.linalg.svd(Vij, full_matrices=False)
+
+    Uk = U[:,:rank]*np.sqrt(S[:rank])
+    Vk = Vt[:rank,:].T*np.sqrt(S[:rank])
+
+    return {'He':He,'Hh':Hh,"Uk":Uk,'Vk':Vk,'Nx':Nx,'Ny':Ny}
+
+def apply_exciton_h(psi,He,Hh,Uk,Vk,Nx,Ny):
+    N=Nx*Ny
+    psi_ = psi.reshape(N,N)
+    
+    t1 = (He @ psi_).ravel()
+    t2 = (psi_ @ Hh.T).ravel()
+
+    V = Vk.T @ psi_
+    t3 = (Uk @ V).ravel()
+
+    return t1+t2+t3
+
+
+def exciton_solver(Nx,Ny,He,Hh,Uk,Vk,n_eigs=5):
+    N = Nx*Ny
+    sz = N**2
+    def matvec(psi):
+        return apply_exciton_h(psi,He,Hh,Uk,Vk,Nx,Ny)
+    
+    H = spla.LinearOperator((sz,sz), matvec=matvec, dtype=float)
+
+    E,psi = spla.eigsh(H,k=n_eigs,which='SA',maxiter=1000, tol=1e-4)
+    return E,psi
+
+
+
+    
 
 #visualize
 

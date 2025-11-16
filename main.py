@@ -13,8 +13,8 @@ os.environ["OMP_NUM_THREADS"] = "8"
 cells = 1
 Lx = WSe2.Lm*cells
 Ly = WSe2.Lm*cells
-Nx = 120*cells
-Ny = 120*cells
+Nx = 20*cells
+Ny = 20*cells
 dx = 10/Nx
 dy = 10/Ny
 meV_si = (10**18)*hbar**2/(2*WSe2.M*eV)
@@ -23,6 +23,43 @@ neigh_x = neigh_y = -meV_si/dx**2
 center = -2*(neigh_x + neigh_y)
 phase_x = np.exp(1j*0.0)
 phase_y = np.exp(1j*0.0)
+
+
+for t in [0.05,0.1, 1]:
+    H = build_h_bilayer(Nx, Ny, WSe2, WS2, t, dx, dy, phase_x, phase_y)
+    E, psi = exciton_solver(**H, n_eigs=5)
+    psi_n = psi[:, 0]
+    N_layer = Nx * Ny
+    w1 = np.sum(np.abs(psi_n[:N_layer])**2)
+    w2 = np.sum(np.abs(psi_n[N_layer:])**2)
+    print(f"t = {t:.3f} eV: layer weights: {w1:.3f}, {w2:.3f}")
+
+print("eig done")
+
+n = 0  # Index of eigenstate
+psi_n = np.real(psi[:, n])
+psi1 = psi_n[:Nx*Ny].reshape((Nx**2,Ny**2))
+psi2 = psi_n[Nx*Ny:].reshape((Nx**2,Ny**2))
+prob_density = psi_n**2
+phase1 = np.angle(psi1[:, n])
+phase2 = np.angle(psi2[:, n])
+prob_layer1 = np.sum(np.abs(psi_n[:Nx*Ny])**2)
+prob_layer2 = np.sum(np.abs(psi_n[Nx*Ny:])**2)
+print(f"Layer 1 weight: {prob_layer1:.3f}, Layer 2 weight: {prob_layer2:.3f}")
+
+
+
+
+plt.figure(figsize=(10,4))
+plt.subplot(1,2,1)
+plt.imshow(psi1, cmap='RdBu_r')
+plt.title('Layer 1 wavefunction')
+
+plt.subplot(1,2,2)
+plt.imshow(psi2, cmap='RdBu_r')
+plt.title('Layer 2 wavefunction')
+plt.show()
+
 
 '''
 X,Y,V = triangular_bounds(WSe2, Nx, Ny, dx, dy)
@@ -50,50 +87,19 @@ for n in range(bands.shape[1]):
 visualize_bandstructure(bands,labels,Nk=20)
 visualize_bilayer_3d(WSe2, WS2, 3.46, cells=2)
 
-'''
+
 #H = build_h_bilayer( Nx,Ny,WSe2, WS2, .04, dx, dy, phase_x, phase_y)
 print("hamiltonian done")
 
 #X,Y,V = triangular_bounds(WSe2, Nx, Ny, dx, dy)
-##E,psi = eigsh(H,k=5, which="SM", mode='normal', tol = 1e-4)
+#E,psi = eigsh(H,k=5, which="SM", mode='normal', tol = 1e-4)
 
 #eigX = np.random.rand(H.shape[0], 4)
 #E, psi = lobpcg(H, eigX, largest=False, tol=1e-8)
-for t in [0.001, 0.005, 0.01, 0.02, 0.05]:
-    H = build_h_bilayer(Nx, Ny, WSe2, WS2, t, dx, dy, phase_x, phase_y)
-    E, psi = spla.eigsh(H, k=4, which='SA')
-    psi_n = psi[:, 0]
-    N_layer = Nx * Ny
-    w1 = np.sum(np.abs(psi_n[:N_layer])**2)
-    w2 = np.sum(np.abs(psi_n[N_layer:])**2)
-    print(f"t = {t:.3f} eV → layer weights: {w1:.3f}, {w2:.3f}")
-
-print("eig done")
-
-
-n = 0  # Index of eigenstate
-psi_n = np.real(psi[:, n])
-psi1 = psi_n[:Nx*Ny].reshape((Nx,Ny))
-psi2 = psi_n[Nx*Ny:].reshape((Nx,Ny))
-prob_density = psi_n**2
-phase1 = np.angle(psi1[:, n])
-phase2 = np.angle(psi2[:, n])
-prob_layer1 = np.sum(np.abs(psi_n[:Nx*Ny])**2)
-prob_layer2 = np.sum(np.abs(psi_n[Nx*Ny:])**2)
-print(f"Layer 1 weight: {prob_layer1:.3f}, Layer 2 weight: {prob_layer2:.3f}")
 
 
 
 
-plt.figure(figsize=(10,4))
-plt.subplot(1,2,1)
-plt.imshow(psi1, cmap='RdBu_r')
-plt.title('Layer 1 wavefunction')
-
-plt.subplot(1,2,2)
-plt.imshow(psi2, cmap='RdBu_r')
-plt.title('Layer 2 wavefunction')
-plt.show()
 
 
 #moire_qubit(E,psi)
@@ -119,7 +125,7 @@ ax3.set_title(f'Eigenstate {n}, E = {E[n]:.3f} eV')
 ax3.set_xlabel('x-grid index')
 ax3.set_ylabel('y-grid index')
 
-'''
+
 #Wavefunction Density over Potential
 ax4 = fig.add_subplot(grid_spec[1, 0])
 contour_base = ax4.contourf(V, cmap='Greys', alpha=0.6)
@@ -128,7 +134,7 @@ fig.colorbar(contour_overlay, ax=ax4, label='|ψ|²')
 ax4.set_title(f'Wavefunction Density over Moiré Potential\nE = {E[n]:.3f} eV')
 ax4.set_xlabel('x-grid index')
 ax4.set_ylabel('y-grid index')
-'''
+
 
 #Phase Distribution
 ax5 = fig.add_subplot(grid_spec[1, 1])
@@ -142,7 +148,7 @@ plt.tight_layout()
 plt.show()
 
 
-'''
+
 fig = plt.figure(figsize=(10, 8))
 ax = fig.add_subplot(111, projection='3d')
 
