@@ -2,7 +2,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy.sparse import diags
 import numpy as np
-from qutip import Bloch, basis,sigmax,sigmay,sigmaz,sigmam,qeye,mesolve,expect,Qobj
+from qutip import Bloch, basis,sigmax,sigmay,sigmaz,sigmam,qeye,mesolve,expect,Qobj, tensor
 from const import *
 from numba import njit, prange
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 1e-18)
 
 
 
-def triangular_bounds(material, Nx,Ny,dx,dy, theta_deg=0.0): #builds 2d triangular bounds
+def triangular_bounds(material, Nx,Ny,dx,dy, offset = 0, theta_deg=0.0, psi_deg = 0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
     ys = (np.arange(Ny) + .5)*dy
 
@@ -25,13 +25,13 @@ def triangular_bounds(material, Nx,Ny,dx,dy, theta_deg=0.0): #builds 2d triangul
     Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
     Gmag = 4*np.pi/(np.sqrt(3)*material.a)
-    V = np.zeros_like(X)
-    G_vec = np.array([[Gmag, 0.0], [Gmag*np.cos(2*np.pi/3), Gmag*np.sin(2*np.pi/3)], [Gmag*np.cos(4*np.pi/3), Gmag*np.sin(4*np.pi/3)]])
-    
-    for i,j in G_vec:
-        V+= np.cos(i*Xr + j*Yr)
+    V = np.zeros_like(X, dtype=np.complex128)
+    G_vec = np.array([[0, 1], [np.sqrt(3)/2, -.5], [-np.sqrt(3)/2, -.5]])
 
-    V = material.V0 * V/3
+    for (i,j) in G_vec:
+        V+= np.cos(i*Gmag*Xr + j*Gmag*Yr + np.radians(psi_deg))
+
+    V = offset + material.V0 * np.real(V)/3
     #V = V.reshape(Nx*Ny)
     return X,Y,V
 
@@ -78,7 +78,7 @@ def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=np.co
             data[p+1] = neigh_x*phase
     
             #+x neighbour
-            xm = (x-1)%Nx
+            xm = (x-1+Nx)%Nx
             dxm = xm*Ny+y
             phase = np.conj(phase_x) if x == 0 else 1.0
             rows[p+2] = idx
@@ -94,7 +94,7 @@ def build_hamiltonian_numba(V_vec,Nx,Ny, neigh_x, neigh_y, center, phase_x=np.co
             data[p+3] = neigh_y*phase
         
             #-y
-            ym = (y-1)%Ny
+            ym = (y-1+Ny)%Ny
             dym = x*Ny + ym
             phase = np.conj(phase_y) if y == 0 else 1.0
             rows[p+4] = idx
@@ -164,14 +164,14 @@ def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
 '''
 
 def build_h_bilayer(Nx,Ny,material1,material2,dx,dy,phase_x=1.,phase_y=1.,theta=3., eps_r = 5, rank=50):
-    Xe, Ye, Ve = triangular_bounds(material1, Nx, Ny, dx, dy, theta_deg=0.0)
-    Xh, Yh, Vh = triangular_bounds(material2, Nx, Ny, dx, dy, theta_deg=theta)
+    Xe, Ye, Ve = triangular_bounds(material1, Nx, Ny, dx, dy, material1.eoff,  theta_deg=0.0, psi_deg = 0)
+    Xh, Yh, Vh = triangular_bounds(material2, Nx, Ny, dx, dy, material2.hoff, theta_deg=theta, psi_deg = material2.psi)
     Ve_ = Ve.ravel()
     Vh_ = Vh.ravel()
     Xef,Yef,Xhf,Yhf = Xe.ravel(), Ye.ravel(), Xh.ravel(), Yh.ravel()
 
-    hb2m1 = hb2mb(material1.M)
-    hb2m2 = hb2mb(material2.M)
+    hb2m1 = hb2mb(material1.me)
+    hb2m2 = hb2mb(material2.mh)
 
     neigh_x1 = -hb2m1/dx**2
     neigh_x2 = -hb2m2/dx**2
@@ -184,19 +184,20 @@ def build_h_bilayer(Nx,Ny,material1,material2,dx,dy,phase_x=1.,phase_y=1.,theta=
 
     rows1,cols1,data1 = build_hamiltonian_numba(np.real(Ve_),Nx,Ny,float(neigh_x1),float(neigh_y1),float(center1),phase_x,phase_y)
     rows2,cols2,data2 = build_hamiltonian_numba(np.real(Vh_),Nx,Ny,float(neigh_x2),float(neigh_y2),float(center2),phase_x,phase_y)
-    data1 = np.clip(data1, -1e4, 1e4)
-    data2 = np.clip(data2, -1e4, 1e4)
+    #data1 = np.clip(data1, -1e4, 1e4)
+    #data2 = np.clip(data2, -1e4, 1e4)
+
+
+
 
     He = sp.csr_matrix((data1,(rows1,cols1)), shape=(Nx*Ny, Nx*Ny))
     Hh = sp.csr_matrix((data2,(rows2,cols2)), shape=(Nx*Ny, Nx*Ny))
 
-    Nstates = Nx*Ny
-
     #low rank approx from paper
     D = np.sqrt((Xef[:,None] - Xhf[None,:])**2 + (Yef[:,None]-Yhf[None,:])**2)
-    r = np.maximum(D,.5)
+    r = np.maximum(D,.2)
 
-    Vij = -14.4/(eps_r*r*1000)
+    Vij = coulomb/(eps_r*r)
 
     U,S,Vt=np.linalg.svd(Vij, full_matrices=False)
 
@@ -212,8 +213,14 @@ def apply_exciton_h(psi,He,Hh,Uk,Vk,Nx,Ny):
     t1 = (He @ psi_).ravel()
     t2 = (psi_ @ Hh.T).ravel()
 
-    V = Vk.T @ psi_
-    t3 = (Uk @ V).ravel()
+    rank = Uk.shape[1]
+    val = np.zeros_like(psi_)
+    for i in range(rank):
+        uk = Uk[:,i]
+        vk = Vk[:,i]
+        val+=np.outer(uk,vk)*psi_
+
+    t3 = val.ravel()
 
     return t1+t2+t3
 
@@ -221,12 +228,15 @@ def apply_exciton_h(psi,He,Hh,Uk,Vk,Nx,Ny):
 def exciton_solver(Nx,Ny,He,Hh,Uk,Vk,n_eigs=5):
     N = Nx*Ny
     sz = N**2
+
+    psi0 = np.random.randn(sz)+1j*np.random.randn(sz)
+    psi0/=np.linalg.norm(psi0)
     def matvec(psi):
         return apply_exciton_h(psi,He,Hh,Uk,Vk,Nx,Ny)
     
     H = spla.LinearOperator((sz,sz), matvec=matvec, dtype=float)
 
-    E,psi = spla.eigsh(H,k=n_eigs,which='SA',maxiter=1000, tol=1e-4)
+    E,psi = spla.eigsh(H,k=n_eigs,which='SA',v0 = psi0, maxiter=1000, tol=1e-4)
     return E,psi
 
 
@@ -294,7 +304,7 @@ def visualize_bilayer_3d(material1,material2,angle_deg,cells=4, V0=0.05, Nx=50,N
     a1 = material1.a
     a2 = material2.a
 
-    
+
     xs1, ys1 = hex_lattice(a1, cells*10, angle=0, offset=(x_center, y_center))
     xs2, ys2 = hex_lattice(a2, cells*10, angle=angle_deg, offset=(x_center, y_center))
 
@@ -312,29 +322,62 @@ def visualize_bilayer_3d(material1,material2,angle_deg,cells=4, V0=0.05, Nx=50,N
     plt.tight_layout()
     plt.show()
 
-def visualize_bandstructure(bands,labels,Nk):
-    fig,ax = plt.subplots(figsize = (7,5))
-    npts = bands.shape[0]
+def visualize_bandstructure(bands, labels, Nk):
+    fig, ax = plt.subplots(figsize=(7, 5))
+    npts = bands.shape
     x = np.arange(npts)
     for n in range(bands.shape[1]):
-        ax.plot(x,bands[:,n],color='blue')
-    ax.set_xticks([0,Nk,2*Nk,3*Nk])
+        ax.plot(x, bands[:, n], color='blue', alpha=0.7)
+    ax.set_xticks([0, Nk, 2*Nk, 3*Nk])
     ax.set_xticklabels(labels)
     ax.set_ylabel("Energy (eV)")
-    ax.grid(True,ls=":")
+    ax.set_title("Calculated Band Structure")
+    ax.grid(True, ls=":")
+    plt.tight_layout()
     plt.show()
 
 
-def qutip_state(psi): #0ket = layer1, 1let = layer2, or K,K'
-    psi/=np.linalg.norm(psi[0:2])
-    return Qobj(psi[0:2], dims=[[2],[1]])
+#quantum computing
 
-def moire_qubit(E,psi):
-    E0,E1 = E[:2]
-    psi0,psi1 = qutip_state(psi[:,0]), qutip_state(psi[:,1])
+def valleys(psi, Nx,Ny,material1, material2):
+    N = Nx*Ny
+    psi_m = psi.reshape(N,N)
+    psi_m/= np.linalg.norm(psi_m)
+
+    x = (np.arange(Nx)+.5)*material1.a
+    y = (np.arange(Ny)+.5)*material2.a
+    X,Y = np.meshgrid(x,y,indexing='ij')
+    K = np.array([4*np.pi/3/material1.a, 0.0])
+    Kp= np.array([-4*np.pi/3/material2.a,0.0])
+    K_phase = np.exp(1j*(K[0]*X + K[1]*Y))
+    Kp_phase = np.exp(1j*(Kp[0]*X + Kp[1]*Y))
+
+    psi_e = np.sum(psi_m, axis=1).reshape(Nx,Ny)
+
+    amp_K = np.sum(psi_e*K_phase)
+    amp_Kp= np.sum(psi_e*Kp_phase)
+
+    vk = np.array([amp_K,0.], dtype=complex)
+    vkp= np.array([0.,amp_Kp], dtype=complex)
+
+    vk/=np.linalg.norm(vk)
+    vkp/=np.linalg.norm(vkp)
+
+    return vk, vkp
+
+def qutip_state(psi, Nx,Ny): #0ket = layer1, 1let = layer2, or K,K'
+    vk,vkp= valleys(psi,Nx,Ny, WSe2, WS2)
+
+    return Qobj(vk,dims=[[2],[1]]), Qobj(vkp,dims=[[2],[1]])
+
+
+def moire_qubit(E,psi,Nx,Ny):
+    E0,E1 = E[0],E[1]
+    psi0,psi1 = qutip_state(psi[:,0], Nx,Ny)
 
     Hq = Qobj(np.diag([E0,E1]))
     b = Bloch()
     b.add_states([psi0, psi1])
     b.show()
-    return(Hq)
+    return Hq, psi0, psi1, b
+
