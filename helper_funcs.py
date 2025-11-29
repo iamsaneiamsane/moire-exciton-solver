@@ -10,11 +10,11 @@ import matplotlib.cm as cm
 from matplotlib.patches import RegularPolygon
 
 
-hb2mb = lambda m_eff: (hbar**2 / (2 * m_eff)) / (eV * 1e-18)
+hb2mb = lambda m_eff: 0.0381 / m_eff
 
 
 
-def triangular_bounds(material, Nx,Ny,dx,dy, offset = 0, theta_deg=0.0, psi_deg = 0.0): #builds 2d triangular bounds
+def triangular_bounds(Lm, material, Nx,Ny,dx,dy, offset = 0, theta_deg=0.0, psi_deg = 0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
     ys = (np.arange(Ny) + .5)*dy
 
@@ -24,14 +24,14 @@ def triangular_bounds(material, Nx,Ny,dx,dy, offset = 0, theta_deg=0.0, psi_deg 
     Xr = X*np.cos(theta_rad) - Y*np.cos(theta_rad)
     Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
-    Gmag = 4*np.pi/(np.sqrt(3)*material.a)
+    Gmag = 4*np.pi/(np.sqrt(3)*Lm)
     V = np.zeros_like(X, dtype=np.complex128)
     G_vec = np.array([[0, 1], [np.sqrt(3)/2, -.5], [-np.sqrt(3)/2, -.5]])
 
     for (i,j) in G_vec:
         V+= np.cos(i*Gmag*Xr + j*Gmag*Yr + np.radians(psi_deg))
 
-    V = offset + material.V0 * np.real(V)/3
+    V = offset + material.V0 * np.real(V)
     #V = V.reshape(Nx*Ny)
     return X,Y,V
 
@@ -111,15 +111,15 @@ def build_hamiltonian(V_vec,Nx,Ny, neigh_x, neigh_y, center, material = WSe2, ph
 
     return H
 
-def build_Hk_bloch(V_vec, Nx,Ny,dx,dy,material,kx=0.0,ky=0.0):
-    hb2m = hb2mb(material.M)
+def build_Hk_bloch(V_vec, Nx,Ny,dx,dy,m_eff,kx=0.0,ky=0.0):
+    hb2m = hb2mb(m_eff)
 
     neigh_x = -hb2m/dx**2
     neigh_y = -hb2m/dy**2
     center = -2*(neigh_x + neigh_y)
 
-    phase_x = np.exp(1j*kx*dx)
-    phase_y = np.exp(1j*ky*dy)
+    phase_x = np.exp(1j*kx*(Nx*dx))
+    phase_y = np.exp(1j*ky*(Ny*dy))
 
     rows,cols,data = build_hamiltonian_numba(V_vec, Nx,Ny,neigh_x,neigh_y,center,phase_x,phase_y)
 
@@ -127,11 +127,11 @@ def build_Hk_bloch(V_vec, Nx,Ny,dx,dy,material,kx=0.0,ky=0.0):
 
     return H
 
-def build_bandstructure(V_vec, Nx,Ny,dx,dy,material,k_path,n_eigs = 6):
+def build_bandstructure(V_vec, Nx,Ny,dx,dy,m_eff, k_path, n_eigs = 6):
     bands = np.zeros((len(k_path), n_eigs))
 
     for i,(x,y) in enumerate(k_path):
-        Hk = build_Hk_bloch(V_vec,Nx,Ny,dx,dy,material,x,y)
+        Hk = build_Hk_bloch(V_vec,Nx,Ny,dx,dy,m_eff,x,y)
         try:
             E, psi = spla.eigsh(Hk,k=n_eigs, which='SA', maxiter=50000, tol = 1e-4)
         except Exception as e:
@@ -142,6 +142,46 @@ def build_bandstructure(V_vec, Nx,Ny,dx,dy,material,k_path,n_eigs = 6):
     
     return bands
 
+def build_kpath_moire(Lm,Nk=15):
+    Gm = 4*np.pi/(np.sqrt(3)*Lm)
+    Ga,K,M = np.array([0,0]), np.array([Gm,0]), np.array([Gm*np.sqrt(3)/2,Gm*.5])
+    def seg(p1,p2): return list(p1+(p2-p1)*t for t in np.linspace(0,1,Nk,endpoint=False))
+    kpath = seg(Ga,K) + seg(K,M) + seg(M,Ga) + [Ga]
+    kpath = np.array([list(p) for p in kpath], dtype=float)
+    return kpath, [['Γ', 'K', 'M', 'Γ']]
+
+def build_bilayer_bands(theta,mat_e, mat_h, ppnm):
+    theta = max(.01,theta)
+    a0 = mat_e.a
+    a1 = mat_h.a
+    delta = 2*(a0-a1)/(a1+a0)
+    Lm = a0/np.sqrt(np.radians(theta)**2 + delta**2)
+
+    Nx = int(max(18,Lm*ppnm))
+    Ny = int(max(18,Lm*ppnm))
+    dx,dy = Lm/Nx, Lm/Ny
+    
+    k_path, labels = build_kpath_moire(Lm,Nk=15)
+    Xe,Ye,Ve = triangular_bounds(Lm,mat_e,Nx,Ny,dx,dy,offset=0, theta_deg=0., psi_deg=mat_e.psi)
+    Xh,Yh,Vh = triangular_bounds(Lm,mat_h,Nx,Ny,dx,dy,offset=0, theta_deg=theta, psi_deg=mat_h.psi)
+
+    bands_e = build_bandstructure(Ve.ravel().real, Nx,Ny,dx,dy,mat_e.me,k_path,n_eigs=2)
+    bands_h = build_bandstructure(Vh.ravel().real, Nx,Ny,dx,dy,mat_h.me,k_path,n_eigs=5)
+
+    vbo = np.max(bands_h[:,0]) - .75
+    Ec=.75
+    fbands = []
+    for i in range(len(bands_h)):
+        point = {'k':i}
+        for j in range(5):
+            point[f'v{j+1}'] = -float(bands_h[i,j] - vbo)*1000
+        for k in range(2):
+            point[f"c{k+1}"] = float(bands_e[i,k] + Ec)*1000
+        fbands.append(point)
+
+    return fbands, labels, {'X': Xh, 'Y': Yh, 'V': Vh.real}
+
+'''
 def segment(p1,p2,N): #helper for kpath
     return [tuple(p1+(p2-p1)*t) for t in np.linspace(0,1,N,endpoint=False)]
 
@@ -153,7 +193,7 @@ def build_kpath(material, Nk=20):
     path = segment(G,K,Nk) + segment(K,M,Nk) + segment(M,G,Nk) + [tuple(G)]
     labels = ['Γ', 'K', 'M', 'Γ']
     return path,labels
-
+'''
 
 '''
 def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
@@ -163,9 +203,10 @@ def miniband(kx_list, ky=0, eig_count = 5, H_kwargs={}):
         Hk = build_hamiltonian(Hk, kx=kx, ky=ky, **H_kwargs)
 '''
 
-def build_h_bilayer(Nx,Ny,material1,material2,dx,dy,phase_x=1.,phase_y=1.,theta=3., eps_r = 5, rank=50):
-    Xe, Ye, Ve = triangular_bounds(material1, Nx, Ny, dx, dy, material1.eoff,  theta_deg=0.0, psi_deg = 0)
-    Xh, Yh, Vh = triangular_bounds(material2, Nx, Ny, dx, dy, material2.hoff, theta_deg=theta, psi_deg = material2.psi)
+def build_h_bilayer(Nx,Ny,material1,material2,dx,dy,phase_x=1.,phase_y=1.,theta=1., eps_r = 5, rank=50):
+    Lm = Nx*dx
+    Xe, Ye, Ve = triangular_bounds(Lm,material1, Nx, Ny, dx, dy, material1.eoff,  theta_deg=0.0, psi_deg = 0)
+    Xh, Yh, Vh = triangular_bounds(Lm,material2, Nx, Ny, dx, dy, material2.hoff, theta_deg=theta, psi_deg = material2.psi)
     Ve_ = Ve.ravel()
     Vh_ = Vh.ravel()
     Xef,Yef,Xhf,Yhf = Xe.ravel(), Ye.ravel(), Xh.ravel(), Yh.ravel()
@@ -204,7 +245,7 @@ def build_h_bilayer(Nx,Ny,material1,material2,dx,dy,phase_x=1.,phase_y=1.,theta=
     Uk = U[:,:rank]*np.sqrt(S[:rank])
     Vk = Vt[:rank,:].T*np.sqrt(S[:rank])
 
-    return {'He':He,'Hh':Hh,"Uk":Uk,'Vk':Vk,'Nx':Nx,'Ny':Ny}
+    return {'He':He,'Hh':Hh,"Uk":Uk,'Vk':Vk,'Nx':Nx,'Ny':Ny, "theta": theta}
 
 def apply_exciton_h(psi,He,Hh,Uk,Vk,Nx,Ny):
     N=Nx*Ny

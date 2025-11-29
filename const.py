@@ -10,28 +10,29 @@ coulomb = 1.4399 #evnm
 #WSe2 constants
 class WSe2:
     a = .3286 #nm
-    me = 0.33*m0 #eV .15-.25
-    mh = 0.45*m0
+    me = 0.33 #eV .15-.25
+    mh = 0.45
     M = me+mh #eV, 
     Eb = 0.45 #eV, .3-.6 depending on env
     r0 = 4.5 #nm, 4-5
-    dielec = 2.25 #1-4.5 based on env, tune further
+    dielec = 4.5 #1-4.5 based on env, tune further
     Lm = 10 #nm, mismatch, test 5-30
-    V0 = .02 #eV
+    V0 = .008 #eV
     psi = 120
     eoff = 0 #V
     hoff = 0 #V
 
 class WS2: #UPDATE ALL PARAMETERS
     a = .3157 #nm
-    me = 0.27*m0 #eV .15-.25
-    mh = .35*m0
-    M = 0.6*m0 #eV, 
+    me = 0.27 #eV .15-.25
+    mh = .35
+    M = me+mh #eV, 
     Eb = 0.45 #eV, .3-.6 depending on env
     r0 = 4.5 #nm, 4-5
-    dielec = 2.25 #1-4.5 based on env, tune further
+    dielec = 4.5 #1-4.5 based on env, tune further
     Lm = 10 #nm, mismatch, test 5-30
-    V0 = .02 #eV
+    V0 = .008 #eV
+    psi = 0
     eoff = -.3 #V
     hoff = -.4 #V
 
