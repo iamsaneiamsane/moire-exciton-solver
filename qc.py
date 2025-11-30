@@ -32,7 +32,7 @@ class MoireQubit:
             return .5*(det_*sigmaz() + rabi_*sigmax())
     
     
-    def evolve(self, psi0, rabi_amp, detuning, dur, pulse_width = None, steps=1000, g=0.0, T1=None, T2=None):
+    def evolve(self, psi0, rabi_amp, detuning, dur, pulse_width = None, steps=50, g=0.0, T1=None, T2=None):
         hbar = .6582 #meV*ps
         cav=5
 

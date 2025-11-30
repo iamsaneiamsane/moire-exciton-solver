@@ -6,6 +6,7 @@ from qc import *
 from helper_funcs import *
 import pickle
 import os
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -44,19 +45,23 @@ def init_qubit_logic(theta, cells=1):
     print(f"--- Qubit Ready: E0={current_qubit.E0:.2f} meV, E1={current_qubit.E1:.2f} meV ---")
     return current_qubit
 
+class ComplexEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        if isinstance(obj, (complex, np.complex64, np.complex128)):
+            if abs(obj.imag) < 1e-9:
+                return float(obj.real)
+            return {"r": float(obj.real), "i": float(obj.imag)}
+        return super().default(obj)
 
+app.json_encoder = ComplexEncoder
 def make_serializable(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, (np.float32, np.float64)):
-        return float(obj)
-    if isinstance(obj, (np.int32, np.int64)):
-        return int(obj)
-    if isinstance(obj, dict):
-        return {k: make_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [make_serializable(i) for i in obj]
-    return obj
+    return json.loads(json.dumps(obj, cls=ComplexEncoder))
 
 @app.route('/status', methods=['GET'])
 def status():
@@ -118,51 +123,52 @@ def handle_evolution():
         
     data = request.json
     
-    # State
     pd = data['psi']
-    c1 = pd['c1']['r'] + 1j*pd['c1']['i']
-    c0 = pd['c0']['r'] + 1j*pd['c0']['i']
+    r1 = pd['c1']['r'] if isinstance(pd['c1'], dict) else float(pd['c1'])
+    i1 = pd['c1']['i'] if isinstance(pd['c1'], dict) else 0.0
+    r0 = pd['c0']['r'] if isinstance(pd['c0'], dict) else float(pd['c0'])
+    i0 = pd['c0']['i'] if isinstance(pd['c0'], dict) else 0.0
+    
+    c1 = r1 + 1j*i1
+    c0 = r0 + 1j*i0
+    
     psi0 = c1*basis(2,0) + c0*basis(2,1)
-    if psi0.norm() > 1e-6: psi0 = psi0.unit()
+    if psi0.norm() > 1e-9: psi0 = psi0.unit()
 
-    # Params
     omega = float(data['omega'])
     delta = float(data['delta'])
     duration = float(data['duration'])
     g = float(data.get('g', 0.0))
-    
-    t1_val = float(data.get('T1', 0))
-    T1 = t1_val if t1_val > 0 else None
+    t1 = float(data.get('T1', 0))
+    T1 = t1 if t1 > 0 else None
     
     pulse_width = data.get('pulse_width', None)
-    if pulse_width is not None: pulse_width = float(pulse_width)
+    if pulse_width: pulse_width = float(pulse_width)
 
-    t, res, final = current_qubit.evolve(
-        psi0, omega, delta, duration, 
-        pulse_width=pulse_width, 
-        g=g, T1=T1
-    )
+    t, res, final = current_qubit.evolve(psi0, omega, delta, duration, pulse_width=pulse_width, g=g, T1=T1)
     
     traj = []
-    for i, time in enumerate(t):
+    for i, ti in enumerate(t):
         pt = {
-            'time': time,
-            'sx': res.expect[0][i], 'sy': res.expect[1][i], 'sz': res.expect[2][i],
-            'population': res.expect[3][i]
+            'time': float(ti),
+            'sx': float(np.real(res.expect[0][i])), 
+            'sy': float(np.real(res.expect[1][i])), 
+            'sz': float(np.real(res.expect[2][i])),
+            'population': float(np.real(res.expect[3][i]))
         }
-        if g > 0: pt['photons'] = res.expect[4][i] 
         traj.append(pt)
 
-    if final.type == 'oper': 
+    if final.type == 'oper':
         pop1 = final[0,0].real
         pop0 = final[1,1].real
         c1_mag = np.sqrt(pop1)
         c0_mag = np.sqrt(pop0)
-        
+
         coherence = final[0,1]
         phase = np.angle(coherence) if np.abs(coherence) > 1e-9 else 0
-        c1_val = c1_mag * np.exp(1j * phase)
-        c0_val = c0_mag 
+        
+        c1_val = c1_mag * np.exp(-1j * phase)
+        c0_val = c0_mag
     else: 
         c1_val = final.full()[0][0]
         c0_val = final.full()[1][0]
