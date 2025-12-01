@@ -12,50 +12,15 @@ app = Flask(__name__)
 CORS(app)
 h = .6582 #mev*ps
 current_qubit = None
-CACHE_DIR = "band_cache"
-QUBIT_CACHE_DIR = "qubit_cache"
+CACHE_DIR = "cache"
 
-
-def init_qubit_logic(theta, cells=1):
-    """
-    Core logic to initialize the qubit.
-    Tries to load Hamiltonian from cache first, then solves for eigenvalues.
-    """
-    global current_qubit
-    theta = round(theta, 2)
-    print(f"Initializing Qubit at theta={theta}°...")
-
-    # --- 1. TRY LOADING CACHED HAMILTONIAN ---
-    cache_path = os.path.join(QUBIT_CACHE_DIR, f"qubit_{theta:.2f}.pkl")
-    setup = None
-    
-    if os.path.exists(cache_path):
-        with open(cache_path, "rb") as f:
-            setup = pickle.load(f)
-    print(f"  > Solving Eigenvalues...")
-    # Extract grid size from setup dict to ensure consistency
-    Nx = setup['Nx']
-    Ny = setup['Ny']
-    E, psi = exciton_solver(setup['Nx'], setup['Ny'], setup['He'], setup['Hh'], setup['Uk'], setup['Vk'], n_eigs=2)
-
-    E0 = E[0] * 1000.0
-    E1 = E[1] * 1000.0
-    qubit_wrapper = MoireQubit(E0,E1)
-    current_qubit = qubit_wrapper
-    print(f"--- Qubit Ready: E0={current_qubit.E0:.2f} meV, E1={current_qubit.E1:.2f} meV ---")
-    return current_qubit
 
 class ComplexEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, (np.float32, np.float64)):
-            return float(obj)
-        if isinstance(obj, (np.int32, np.int64)):
-            return int(obj)
+        if isinstance(obj, np.ndarray): return obj.tolist()
+        if isinstance(obj, (np.float32, np.float64)): return float(obj)
+        if isinstance(obj, (np.int32, np.int64)): return int(obj)
         if isinstance(obj, (complex, np.complex64, np.complex128)):
-            if abs(obj.imag) < 1e-9:
-                return float(obj.real)
             return {"r": float(obj.real), "i": float(obj.imag)}
         return super().default(obj)
 
@@ -63,58 +28,58 @@ app.json_encoder = ComplexEncoder
 def make_serializable(obj):
     return json.loads(json.dumps(obj, cls=ComplexEncoder))
 
+
+def load_cache(theta):
+    theta = round(theta, 2)
+    path = os.path.join(CACHE_DIR, f"data_{theta:.2f}.pkl")
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    return None
+
+def init_qubit_logic(theta):
+    global current_qubit
+    print(f"Initializing Qubit at theta={theta}°...")
+    
+    data = load_cache(theta)
+    
+    if data and 'qubit' in data:
+        print("  > Loaded from Unified Cache")
+        q_data = data['qubit']
+        current_qubit = MoireQubit(q_data['E0'], q_data['E1'])
+        
+        return current_qubit
+    
+    print("  > Cache missing, cannot initialize.")
+    return None
+
 @app.route('/status', methods=['GET'])
 def status():
-    return jsonify({'status':'online', 'backend':'Qutip+Flask'})
+    return jsonify({'status':'online', 'initialized': current_qubit is not None})
 
 @app.route('/initialize', methods=['POST'])
 def initialize():
-    global current_qubit
     data = request.json
-    theta = float(data.get('theta', 1.0))
-    cells = int(data.get('cells', 1))
-    
-    print(f"Initializing Qubit at theta={theta}°...")
-
-    current_qubit = init_qubit_logic(theta)
-    
-    return jsonify({
-        "success": True, 
-        "E0": current_qubit.E0, 
-        "E1": current_qubit.E1, 
-        "omega_q": current_qubit.oq
-    })
+    try:
+        q = init_qubit_logic(float(data.get('theta', 1.0)))
+        if q: return jsonify(make_serializable({"success": True, "E0": q.E0, "E1": q.E1}))
+        else: return jsonify({"error": "Cache not found for this angle"}), 404
+    except Exception as e: return jsonify({"error": str(e)}), 500
 
 @app.route('/bandstructure', methods=['POST'])
 def get_bands():
     data = request.json
-    raw_theta = float(data.get('theta', 3.0))
-    theta = round(raw_theta * 10) / 10
+    theta = round(float(data.get('theta', 3.0)) * 10) / 10
     
-    cache_key = f"bands_{theta:.2f}.pkl"
-    cache_path = os.path.join(CACHE_DIR, cache_key)
-    
-    if os.path.exists(cache_path):
-        print(f"Serving cached bands for {theta}°")
-        with open(cache_path, 'rb') as f:
-            return jsonify(make_serializable(pickle.load(f)))
-    
-    print(f"Cache miss for {theta}°. Calculating live...")
-    try:
-        bands_data, labels, potential_data = build_bilayer_bands(theta, WS2, WSe2, ppnm=2.0)
-        
+    cached = load_cache(theta)
+    if cached:
         return jsonify(make_serializable({
-            "theta": theta,
-            "bands": {
-                "data": bands_data,
-                "labels": labels,
-                "meta": {"n_valence": 6, "n_conduction": 2}
-            },
-            "potential": potential_data
+            "theta": cached['theta'],
+            "bands": cached['bands'],
+            "potential": cached['potential']
         }))
-    except Exception as e:
-        print(e)
-        return jsonify({"error": str(e)}), 500
+        
+    return jsonify({"error": "Data not cached"}), 404
 
 @app.route('/evolve', methods=['POST'])
 def handle_evolution():
@@ -186,8 +151,8 @@ def handle_emission():
     g = float(data.get('g', 0.5))
     kappa = float(data.get('kappa', 2.0))
     gamma = float(data.get('gamma', 0.1))
-    
-    t, atom, photon = current_qubit.simulate_emission(g, kappa, gamma, dur=50)
+
+    t, atom, photon = current_qubit.simulate_emission(g, kappa, gamma, dur=20)
     
     return jsonify(make_serializable({
         'trajectory': [{'time': t[i], 'atom': atom[i], 'photon': photon[i]} for i in range(len(t))]

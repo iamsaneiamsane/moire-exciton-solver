@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Moiré Qubit Lab</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* ... Styles ... */
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; user-select: none; }
+        .slider { -webkit-appearance: none; width: 100%; height: 4px; background: #334155; border-radius: 5px; outline: none; }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #38bdf8; cursor: pointer; }
+        .btn-tab { @apply px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide transition-all; }
+        .btn-active { @apply bg-blue-600 text-white shadow-lg shadow-blue-500/20; }
+        .btn-inactive { @apply text-slate-400 hover:text-white hover:bg-slate-800; }
+        .widget-box { @apply bg-slate-800/60 rounded-2xl border border-slate-700 overflow-hidden relative transition-all duration-300; }
+        .widget-clickable { @apply cursor-pointer hover:border-blue-500/50 hover:shadow-lg hover:scale-[1.01]; }
+        .widget-title { @apply text-xs font-bold text-slate-400 uppercase absolute top-4 left-4 z-10 pointer-events-none; }
+        /* 3D SCENE */
+        .bloch-scene { perspective: 800px; width: 100%; height: 280px; cursor: grab; overflow: hidden; }
+        .bloch-scene:active { cursor: grabbing; }
+        /* Ensure container is centered */
+        .bloch-container { width: 160px; height: 160px; margin: 60px auto; position: relative; transform-style: preserve-3d; transition: transform 0.1s linear; }
+        
+        .ring { position: absolute; top:0; left:0; width:100%; height:100%; border-radius:50%; border:1px solid rgba(255,255,255,0.15); pointer-events:none; }
+        .equator { border-color: rgba(56, 189, 248, 0.5); border-style: dashed; }
+        
+        .label-3d { 
+            position: absolute; width: 24px; height: 24px; text-align: center; font-family: monospace; font-size: 10px; font-weight: bold; color: #fff; background: rgba(0,0,0,0.6); border-radius: 4px; display: flex; alignItems: center; justifyContent: center;
+            top: 50%; left: 50%; margin-top: -12px; margin-left: -12px; backface-visibility: hidden;
+        }
+
+        /* VECTOR MECHANICS */
+        /* Pivot is at center (50% 50%) */
+        .vector-pivot { position: absolute; top:0; left:0; width:100%; height:100%; transform-style: preserve-3d; }
+        
+        /* Shaft: Starts at center, goes UP (negative Y) */
+        .vector-shaft { 
+            position: absolute; bottom: 50%; left: 50%; 
+            width: 4px; height: 70px; 
+            background: #f43f5e; 
+            transform-origin: bottom center; 
+            transform: translate(-50%, 0); /* Center horizontally */
+            box-shadow: 0 0 10px #f43f5e; border-radius: 2px; 
+        }
+        /* Head: Sits on top of shaft */
+        .vector-head { 
+            position: absolute; bottom: calc(50% + 68px); left: 50%; 
+            width: 0; height: 0; 
+            border-left: 6px solid transparent; border-right: 6px solid transparent; 
+            border-bottom: 12px solid #f43f5e; 
+            transform: translate(-50%, 0);
+        }
+
+        .btn-gate { @apply flex-1 py-3 rounded-xl border border-slate-600 bg-slate-800 hover:bg-slate-700 transition-all active:scale-95 flex flex-col items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed; }
+        /* CAVITY VISUALIZER */
+        .cavity-mirror { position: absolute; top: 20%; bottom: 20%; width: 6px; background: linear-gradient(to right, #cbd5e1, #64748b); border-radius: 2px; box-shadow: 0 0 10px rgba(255,255,255,0.2); }
+        .cavity-mirror.left { left: 10%; }
+        .cavity-mirror.right { right: 10%; }
+        .atom-dot { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 30% 30%, #f43f5e, #881337); box-shadow: 0 0 20px #f43f5e; transition: all 0.05s linear; }
+        .photon-wave { position: absolute; top: 50%; left: 10%; right: 10%; height: 40px; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; opacity: 0.8; }
+        .wave-path { fill: none; stroke: #38bdf8; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 5px #0ea5e9); transition: stroke-opacity 0.05s linear; }
+</style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } = Recharts;
+
+        const INITIAL_PSI = { c1: { r: 0, i: 0 }, c0: { r: 1, i: 0 } };
+        const HBAR = 0.6582;
+
+        // --- PULSE TAB ---
+        const PulseTab = ({ serverStatus, psi, setPsi }) => {
+            const [omega, setOmega] = useState(0.5);
+            const [delta, setDelta] = useState(0.0);
+            const [time, setTime] = useState(10);
+            const [t1, setT1] = useState(0);
+            const [traj, setTraj] = useState([]);
+            
+            // Visual State
+            // Theta: 0 (Up/North), 180 (Down/South)
+            // Phi: Azimuth (Rotation around Vertical)
+            const [displayBloch, setDisplayBloch] = useState({ theta: 0, phi: 0, pop: 0 });
+            
+            const [rot, setRot] = useState({x: -15, y: 30});
+            const [initializing, setInitializing] = useState(false);
+            const [isSimulating, setIsSimulating] = useState(false);
+            
+            const animIntervalRef = useRef(null);
+            const phiRef = useRef(0);
+
+            // --- ANIMATION LOOP ---
+            const animateTrajectory = (trajectory, finalState) => {
+                let frame = 0;
+                if (animIntervalRef.current) clearInterval(animIntervalRef.current);
+
+                animIntervalRef.current = setInterval(() => {
+                    // End of Animation
+                    if (!trajectory || frame >= trajectory.length) {
+                        clearInterval(animIntervalRef.current);
+                        setPsi(finalState);
+                        updateDisplayFromPsi(finalState);
+                        setIsSimulating(false);
+                        return;
+                    }
+                    
+                    const pt = trajectory[frame];
+                    // Mapping: 
+                    // Sz: -1 (Ground/Physics) -> 0 deg (North/Visual)
+                    // Sz: +1 (Excited/Physics) -> 180 deg (South/Visual)
+                    // Formula: (sz + 1) / 2 * 180  (Linear map) or acos(-sz)
+                    
+                    // Use population directly for stability
+                    // Pop=0 -> Theta=0. Pop=1 -> Theta=180.
+                    const thetaVal = pt.population * 180; 
+                    
+                    // Phase Guard
+                    // If near poles (theta ~ 0 or 180), keep previous phi
+                    let phiVal = phiRef.current;
+                    if (pt.population > 0.01 && pt.population < 0.99) {
+                        // Calculate phi from X/Y
+                        phiVal = Math.atan2(pt.sy, pt.sx) * (180 / Math.PI);
+                        phiRef.current = phiVal;
+                    }
+                    
+                    setDisplayBloch({ theta: thetaVal, phi: phiVal, pop: pt.population });
+                    frame += 2; 
+                }, 20); 
+            };
+
+            const updateDisplayFromPsi = (p) => {
+                if(!p || !p.c1) return;
+                const prob1 = p.c1.r**2 + p.c1.i**2;
+                const theta = prob1 * 180; 
+                
+                if (prob1 > 0.01 && prob1 < 0.99) {
+                    const phase1 = Math.atan2(p.c1.i, p.c1.r);
+                    const phase0 = Math.atan2(p.c0.i, p.c0.r);
+                    // Visual Correction: Add 90 deg offset if needed to align X/Y axes with CSS
+                    phiRef.current = (phase1 - phase0) * (180 / Math.PI);
+                }
+                setDisplayBloch({ theta, phi: phiRef.current, pop: prob1 });
+            };
+
+            useEffect(() => { updateDisplayFromPsi(psi); return () => clearInterval(animIntervalRef.current); }, []);
+
+            const runPulse = async (w, d, t, p_width=null) => {
+                if(!serverStatus || isSimulating) return;
+                setIsSimulating(true);
+                try {
+                    const res = await fetch('http://localhost:5000/evolve', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ 
+                            psi, omega: w, delta: d, duration: t, 
+                            pulse_width: p_width, T1: t1 
+                        })
+                    });
+                    const data = await res.json();
+                    if(data.error) { alert(data.error); setIsSimulating(false); return; }
+                    
+                    setTraj(data.trajectory);
+                    animateTrajectory(data.trajectory, data.final_psi);
+                    
+                } catch(e) { console.error(e); setIsSimulating(false); }
+            };
+
+            const reset = () => { 
+                setPsi(INITIAL_PSI); setTraj([]); phiRef.current = 0; updateDisplayFromPsi(INITIAL_PSI); 
+            };
+
+            const initSystem = async () => {
+                setInitializing(true);
+                try {
+                    const res = await fetch('http://localhost:5000/initialize', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ theta: 1.0, cells: 1 })
+                    });
+                    const data = await res.json();
+                    if(data.success) reset();
+                } catch(e) { console.error(e); }
+                setInitializing(false);
+            };
+
+            const applyGate = (type) => {
+                let w=0, d=0, t_gate=0;
+                if(type === 'X') { w=1.0; d=0.0; t_gate=(Math.PI*HBAR)/w; } 
+                if(type === 'Z') { w=0.0; d=1.0; t_gate=(Math.PI*HBAR)/d; } 
+                if(type === 'H') { w=1.0; d=0.0; t_gate=(Math.PI*HBAR)/(2*w); } 
+                
+                const total_time = Math.max(15, t_gate * 3);
+                setOmega(w); setDelta(d); setTime(parseFloat(total_time.toFixed(2)));
+                runPulse(w, d, total_time, t_gate);
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in h-[550px]">
+                    <div className="widget-box p-5 flex flex-col gap-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-sm font-bold text-slate-300 uppercase">Qubit Operations</h3>
+                            <button onClick={initSystem} disabled={initializing} className={`text-[10px] px-2 py-1 rounded border ${initializing?'border-yellow-500 text-yellow-500':'border-emerald-500 text-emerald-400 hover:bg-emerald-500/10'}`}>
+                                {initializing ? 'INITIALIZING...' : 'INITIALIZE SYSTEM'}
+                            </button>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={()=>applyGate('X')} disabled={isSimulating} className="btn-gate"><span className="text-xl font-bold text-rose-400">X</span><span className="text-xs text-slate-400">Bit Flip</span></button>
+                            <button onClick={()=>applyGate('Z')} disabled={isSimulating} className="btn-gate"><span className="text-xl font-bold text-emerald-400">Z</span><span className="text-xs text-slate-400">Phase</span></button>
+                            <button onClick={()=>applyGate('H')} disabled={isSimulating} className="btn-gate"><span className="text-xl font-bold text-cyan-400">H</span><span className="text-xs text-slate-400">Superpos</span></button>
+                        </div>
+                        <div className="h-px bg-slate-700 my-1"></div>
+                        <div className="space-y-4">
+                            <div><label className="text-xs text-slate-400">Rabi Freq (Ω)</label><input type="range" min="0" max="2" step="0.1" value={omega} onChange={e=>setOmega(e.target.value)} className="slider w-full"/></div>
+                            <div><label className="text-xs text-slate-400">Detuning (δ)</label><input type="range" min="-2" max="2" step="0.1" value={delta} onChange={e=>setDelta(e.target.value)} className="slider w-full"/></div>
+                            <div><label className="text-xs text-slate-400">Duration (ps)</label><input type="range" min="1" max="50" value={time} onChange={e=>setTime(e.target.value)} className="slider w-full"/></div>
+                            <div>
+                                <div className="flex justify-between"><label className="text-xs text-slate-400">Decoherence T1</label><span className="text-xs text-amber-400 font-mono">{t1===0?'∞':t1} ps</span></div>
+                                <input type="range" min="0" max="100" step="5" value={t1} onChange={e=>setT1(parseFloat(e.target.value))} className="slider w-full"/>
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                                <button onClick={()=>runPulse(omega, delta, time)} disabled={isSimulating} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex-1 hover:bg-blue-500 disabled:opacity-50">RUN PULSE</button>
+                                <button onClick={reset} disabled={isSimulating} className="border border-slate-600 text-slate-400 px-4 py-2 rounded-lg text-xs font-bold hover:text-white disabled:opacity-50">RESET</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="widget-box p-5 flex flex-col items-center justify-center">
+                        <div className="bloch-scene" onMouseMove={e => e.buttons===1 && setRot({x: rot.x-e.movementY, y: rot.y+e.movementX})}>
+                            <div className="bloch-container" style={{transform: `rotateX(${rot.x}deg) rotateY(${rot.y}deg)`}}>
+                                <div className="ring equator" style={{transform:'rotateX(90deg)'}}></div>
+                                <div className="ring"></div>
+                                <div className="ring" style={{transform:'rotateY(90deg)'}}></div>
+                                
+                                {/* LABELS */}
+                                <div className="label-3d" style={{transform: `translate(0px, -100px) rotateY(${-rot.y}deg) rotateX(${-rot.x}deg)`}}>|0⟩</div>
+                                <div className="label-3d" style={{transform: `translate(0px, 100px) rotateY(${-rot.y}deg) rotateX(${-rot.x}deg)`}}>|1⟩</div>
+                                <div className="label-3d" style={{transform: `translate(0px, 0px) translateZ(100px) rotateY(${-rot.y}deg) rotateX(${-rot.x}deg)`}}>|+⟩</div>
+                                <div className="label-3d" style={{transform: `translate(100px, 0px) rotateY(${-rot.y}deg) rotateX(${-rot.x}deg)`}}>|i⟩</div>
+
+                                {/* VECTOR ROTATION:
+                                    1. rotateY(phi): Spins the plane around the vertical Y-axis.
+                                    2. rotateZ(theta): Tilts the vector away from Up. 
+                                       (Using Z because in this rotated frame, Z is the tilt axis).
+                                    Note: Vector points UP initially.
+                                */}
+                                <div className="vector-pivot" style={{transform: `rotateY(${displayBloch.phi}deg) rotateZ(${displayBloch.theta}deg)`}}>
+                                    <div className="vector-shaft"></div>
+                                    <div className="vector-head"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-4 text-center">
+                            <div className="text-xs text-slate-500 uppercase tracking-widest mb-1">Excited State Pop</div>
+                            <div className="text-2xl font-mono text-cyan-400">{displayBloch.pop.toFixed(3)}</div>
+                            <div className="text-[10px] text-slate-500 mt-1 font-mono">Phase: {displayBloch.phi.toFixed(0)}°</div>
+                        </div>
+                    </div>
+
+                    <div className="widget-box p-5">
+                        <h3 className="text-sm font-bold text-slate-300 mb-4 uppercase">Population Dynamics</h3>
+                        <div className="h-[400px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={traj}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false}/>
+                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{fontSize:10}} label={{value:'Time (ps)', position:'bottom', offset:0}}/>
+                                    <YAxis domain={[0,1]} tick={{fontSize:10}} stroke="#94a3b8"/>
+                                    <Tooltip contentStyle={{backgroundColor:'#1e293b', border:'none'}} itemStyle={{color:'#f43f5e'}} formatter={(val)=>[val.toFixed(3), 'Pop']}/>
+                                    <Line type="monotone" dataKey="population" stroke="#f43f5e" strokeWidth={2} dot={false} isAnimationActive={false}/>
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- PHYSICS TAB ---
+        const PhysicsTab = ({ serverStatus }) => {
+            const [theta, setTheta] = useState(1.0);
+            const [bands, setBands] = useState([]);
+            const [potentialData, setPotentialData] = useState(null);
+            const [mainView, setMainView] = useState('bands');
+            const [hiddenLines, setHiddenLines] = useState({});
+            const [selectedHex, setSelectedHex] = useState(null);
+            const [view3D, setView3D] = useState({ rotX: 45, rotZ: 45, zoom: 1.0 });
+            const [isDragging, setIsDragging] = useState(false);
+            const dragStart = useRef({x:0, y:0});
+            const latticeRef = useRef(null);
+            const potentialRef = useRef(null);
+
+            useEffect(() => {
+                if(!serverStatus) return;
+                const fetchData = async () => {
+                    try {
+                        const res = await fetch('http://localhost:5000/bandstructure', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({theta}) });
+                        const data = await res.json();
+                        setBands(data.bands.data);
+                        setPotentialData(data.potential);
+                    } catch(e) { console.error(e); }
+                };
+                const timer = setTimeout(fetchData, 300);
+                return () => clearTimeout(timer);
+            }, [theta, serverStatus]);
+
+            const handleLatticeClick = (e) => { if(mainView!=='lattice'){setMainView('lattice'); return;} const rect = latticeRef.current.getBoundingClientRect(); const x=e.clientX-rect.left-rect.width/2; const y=e.clientY-rect.top-rect.height/2; const scale=1.5; const a=12*scale; const q=Math.round(x/(a*1.5)); const r=Math.round((y-x*Math.sqrt(3)/3)/(a*Math.sqrt(3))); setSelectedHex({q,r}); };
+            useEffect(() => { const canvas = latticeRef.current; if(!canvas) return; const ctx = canvas.getContext('2d'); const rect = canvas.parentNode.getBoundingClientRect(); canvas.width = rect.width; canvas.height = rect.height; const w = canvas.width, h = canvas.height; ctx.fillStyle = '#020617'; ctx.fillRect(0,0,w,h); const drawGrid = (angle, color) => { ctx.fillStyle = color; const rad = angle*Math.PI/180; const cos=Math.cos(rad), sin=Math.sin(rad); const scale=mainView==='lattice'?1.5:1.0; const a=12*scale; for(let q=-20; q<20; q++) { for(let r=-20; r<20; r++) { let x=a*1.5*q; let y=a*Math.sqrt(3)*(r+q/2); let rx=x*cos-y*sin+w/2; let ry=x*sin+y*cos+h/2; if(rx>0 && rx<w && ry>0 && ry<h) { ctx.beginPath(); ctx.arc(rx, ry, 1.5*scale, 0, Math.PI*2); ctx.fill(); if(selectedHex && selectedHex.q===q && selectedHex.r===r && angle!==0) { ctx.strokeStyle='#fcd34d'; ctx.lineWidth=2; ctx.beginPath(); for(let k=0; k<6; k++) { let hk=k*Math.PI/3; let hx=rx+6*scale*Math.cos(hk); let hy=ry+6*scale*Math.sin(hk); if(k===0) ctx.moveTo(hx,hy); else ctx.lineTo(hx,hy); } ctx.closePath(); ctx.stroke(); } } } } }; drawGrid(0, 'rgba(56, 189, 248, 0.5)'); drawGrid(theta, 'rgba(244, 63, 94, 0.5)'); }, [theta, mainView, selectedHex]);
+
+            // --- CLIENT-SIDE TILING FOR 3D POTENTIAL ---
+            useEffect(() => {
+                const canvas = potentialRef.current; if(!canvas || !potentialData) return;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.parentNode.getBoundingClientRect();
+                canvas.width = rect.width; canvas.height = rect.height;
+                const w = canvas.width, h = canvas.height;
+                ctx.clearRect(0,0,w,h);
+
+                const { V_unit, Lx, Ly } = potentialData;
+                const Nu = V_unit.length; const Mu = V_unit[0].length;
+                const L_view = 20.0; // 20nm Window
+
+                // Project Function
+                const project = (x, y, z) => {
+                    const xc = x - L_view/2; const yc = y - L_view/2;
+                    const rZ = view3D.rotZ * Math.PI/180; const rX = view3D.rotX * Math.PI/180;
+                    let x1 = xc*Math.cos(rZ) - yc*Math.sin(rZ); let y1 = xc*Math.sin(rZ) + yc*Math.cos(rZ);
+                    let y2 = y1*Math.cos(rX) - z*Math.sin(rX);
+                    const scale = 20 * view3D.zoom * (mainView==='potential'?1.5:0.8);
+                    return { sx: w/2 + x1*scale, sy: h/2 + y2*scale };
+                };
+
+                ctx.strokeStyle = 'rgba(129, 140, 248, 0.6)'; ctx.lineWidth = 1;
+                const steps = 50; const d = L_view / steps;
+
+                // TILING LOGIC: Map global (x,y) -> local unit cell (u,v)
+                for(let i=0; i<=steps; i++) {
+                    ctx.beginPath();
+                    for(let j=0; j<=steps; j++) {
+                        let x = i*d; let y = j*d;
+                        
+                        // WRAP Coordinates: x % Lx, y % Ly
+                        // Use (a % n + n) % n to handle negatives safely if needed
+                        let localX = (x % Lx + Lx) % Lx;
+                        let localY = (y % Ly + Ly) % Ly;
+                        
+                        // Map to array index
+                        let u = Math.floor(localX / Lx * Nu);
+                        let v = Math.floor(localY / Ly * Mu);
+                        if (u >= Nu) u = 0; if (v >= Mu) v = 0;
+
+                        let z = V_unit[u][v];
+                        let p = project(x, y, z * 200); // Scale Height
+                        if(j===0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
+                    }
+                    ctx.stroke();
+                }
+                
+                // Crosshatch
+                for(let j=0; j<=steps; j++) {
+                    ctx.beginPath();
+                    for(let i=0; i<=steps; i++) {
+                        let x = i*d; let y = j*d;
+                        let localX = (x % Lx + Lx) % Lx;
+                        let localY = (y % Ly + Ly) % Ly;
+                        let u = Math.floor(localX / Lx * Nu);
+                        let v = Math.floor(localY / Ly * Mu);
+                        if (u >= Nu) u = 0; if (v >= Mu) v = 0;
+                        let z = V_unit[u][v];
+                        let p = project(x, y, z * 200);
+                        if(i===0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
+                    }
+                    ctx.stroke();
+                }
+
+            }, [potentialData, mainView, view3D]);
+
+            // Events
+            const handlePotMouseDown = (e) => { if(mainView!=='potential'){setMainView('potential'); return;} setIsDragging(true); dragStart.current={x:e.clientX, y:e.clientY}; };
+            const handlePotMouseMove = (e) => { if(!isDragging) return; const dx = e.clientX - dragStart.current.x; const dy = e.clientY - dragStart.current.y; setView3D(p => ({...p, rotZ: p.rotZ + dx*0.5, rotX: Math.max(0, Math.min(90, p.rotX - dy*0.5)) })); dragStart.current = {x:e.clientX, y:e.clientY}; };
+            const handlePotWheel = (e) => { if(mainView!=='potential') return; setView3D(p => ({...p, zoom: Math.max(0.5, Math.min(3, p.zoom - e.deltaY*0.001))})); };
+            const handleLegendClick = (e) => { const { dataKey } = e; setHiddenLines(prev => ({ ...prev, [dataKey]: !prev[dataKey] })); };
+
+            // Renders
+            const renderControls = () => ( <div className="widget-box p-5 h-full flex flex-col justify-center"> <h3 className="text-sm font-bold text-slate-300 mb-2">Twist Angle: <span className="text-blue-400 font-mono">{theta.toFixed(1)}°</span></h3> <input type="range" min="0.5" max="5.0" step="0.1" value={theta} onChange={e=>setTheta(parseFloat(e.target.value))} className="slider mb-2"/> <div className="flex justify-between text-[10px] text-slate-500"><span>0.5° (Flat Bands)</span><span>5.0° (Dispersive)</span></div> </div> );
+            const renderLattice = (isMain) => ( <div className={`widget-box h-full flex flex-col ${!isMain ? 'widget-clickable' : ''}`} onClick={()=>!isMain && setMainView('lattice')}> <div className="widget-title">Real-Space Moiré Pattern</div> <div className="flex-grow bg-black relative"> <canvas ref={latticeRef} onClick={handleLatticeClick} className="w-full h-full object-cover"/> {selectedHex && <div className="absolute bottom-2 right-2 text-[10px] text-yellow-400 font-mono">Hex: {selectedHex.q}, {selectedHex.r}</div>} </div> </div> );
+            const renderPotential = (isMain) => ( <div className={`widget-box h-full flex flex-col ${!isMain ? 'widget-clickable' : ''}`} onClick={()=>!isMain && setMainView('potential')}> <div className="widget-title">Potential V(r) [20nm]</div> <div className="flex-grow bg-black relative" onMouseDown={handlePotMouseDown} onMouseMove={handlePotMouseMove} onMouseUp={()=>setIsDragging(false)} onMouseLeave={()=>setIsDragging(false)} onWheel={handlePotWheel}> <canvas ref={potentialRef} className="w-full h-full object-cover"/> </div> </div> );
+            const renderBands = (isMain) => ( <div className={`widget-box h-full flex flex-col p-6 ${!isMain ? 'widget-clickable' : ''}`} onClick={()=>!isMain && setMainView('bands')}> <h3 className="text-sm font-bold text-slate-300 mb-4 uppercase">Moiré Band Structure</h3> <div className="flex-grow"> <ResponsiveContainer width="100%" height="100%"> <LineChart data={bands}> <CartesianGrid strokeDasharray="3 3" stroke="#334155"/> <XAxis dataKey="k" tick={false} stroke="#94a3b8"/> <YAxis stroke="#94a3b8" label={{value:'Energy (meV)', angle:-90, position:'insideLeft'}}/> <Tooltip contentStyle={{backgroundColor:'#1e293b', border:'none'}}/> <Legend onClick={handleLegendClick} wrapperStyle={{cursor:'pointer', paddingTop:'10px'}}/> <Line type="monotone" dataKey="c1" stroke="#3b82f6" strokeWidth={2} dot={false} name="Cond (e)" hide={hiddenLines['c1']}/> <Line type="monotone" dataKey="c2" stroke="#3b82f6" strokeWidth={1} strokeOpacity={0.5} dot={false} hide={hiddenLines['c2']}/> {[1,2,3,4,5,6].map(i => ( <Line key={`v${i}`} type="monotone" dataKey={`v${i}`} stroke="#ef4444" strokeWidth={i <= 2 ? 2 : 1} strokeOpacity={i <= 2 ? 1 : 0.4} dot={false} name={i===1 ? "Valence (h) |0⟩" : (i===2 ? "Valence (h) |1⟩" : null)} hide={hiddenLines[`v${i}`]} /> ))} </LineChart> </ResponsiveContainer> </div> </div> );
+            return ( <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in h-[700px]"> <div className="lg:col-span-4 flex flex-col gap-4 h-full"> <div className="h-24 flex-shrink-0">{renderControls()}</div> <div className="flex-grow flex flex-col gap-4"> <div className="flex-1 min-h-0">{mainView === 'bands' ? renderLattice(false) : mainView === 'lattice' ? renderBands(false) : renderLattice(false)}</div> <div className="flex-1 min-h-0">{mainView === 'bands' ? renderPotential(false) : mainView === 'potential' ? renderBands(false) : renderPotential(false)}</div> </div> </div> <div className="lg:col-span-8 h-full"> {mainView === 'bands' && renderBands(true)} {mainView === 'lattice' && renderLattice(true)} {mainView === 'potential' && renderPotential(true)} </div> </div> );
+        };
+        // --- EMISSION TAB ---
+        const EmissionTab = ({ serverStatus }) => {
+            const [data, setData] = useState([]);
+            const [g, setG] = useState(0.5);
+            const [kappa, setKappa] = useState(2.0);
+            const [animFrame, setAnimFrame] = useState(0);
+            const animRef = useRef(null);
+
+            useEffect(() => {
+                if(!serverStatus) return;
+                const timer = setTimeout(async () => {
+                    const res = await fetch('http://localhost:5000/emission', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({g, kappa, gamma:0.1}) });
+                    const json = await res.json(); setData(json.trajectory); setAnimFrame(0);
+                }, 200); return () => clearTimeout(timer);
+            }, [g, kappa, serverStatus]);
+
+            useEffect(() => {
+                if(!data || data.length === 0) return;
+                const loop = () => { setAnimFrame(f => (f + 1) % data.length); animRef.current = requestAnimationFrame(loop); };
+                animRef.current = requestAnimationFrame(loop);
+                return () => cancelAnimationFrame(animRef.current);
+            }, [data]);
+
+            const pt = data[animFrame] || { atom: 0, photon: 0 };
+            
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+                    <div className="widget-box p-5 space-y-6">
+                        <h3 className="text-sm font-bold text-slate-300 uppercase">Cavity Params</h3>
+                        <div><label className="text-xs text-slate-400">Coupling (g): {g}</label><input type="range" min="0" max="5" step="0.1" value={g} onChange={e=>setG(parseFloat(e.target.value))} className="slider w-full"/></div>
+                        <div><label className="text-xs text-slate-400">Decay (κ): {kappa}</label><input type="range" min="0.1" max="5" step="0.1" value={kappa} onChange={e=>setKappa(parseFloat(e.target.value))} className="slider w-full"/></div>
+                    </div>
+                    <div className="lg:col-span-2 flex flex-col gap-4">
+                        {/* CAVITY ANIMATION */}
+                        <div className="widget-box h-[150px] bg-black relative flex items-center justify-center overflow-hidden">
+                            <div className="text-xs text-slate-500 absolute top-2 left-3">Cavity (Real-Time)</div>
+                            <div className="cavity-mirror left"></div>
+                            <div className="cavity-mirror right"></div>
+                            <div className="cavity-mode">
+                                <svg width="100%" height="100%" style={{opacity: pt.photon*2}}>
+                                    <path d="M0,20 Q20,0 40,20 T80,20 T120,20 T160,20 T200,20 T240,20 T280,20 T320,20 T360,20 T400,20" fill="none" stroke="#38bdf8" strokeWidth={2+pt.photon*3} className="wave-path" />
+                                </svg>
+                            </div>
+                            <div className="atom-dot" style={{transform: `translate(-50%, -50%) scale(${0.5 + pt.atom})`, opacity: pt.atom + 0.3}}></div>
+                        </div>
+                        <div className="widget-box p-5 h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={data}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false}/>
+                                    <XAxis dataKey="time" stroke="#94a3b8"/> <YAxis stroke="#94a3b8"/> <Tooltip contentStyle={{backgroundColor:'#1e293b', border:'none'}}/> <Legend verticalAlign="top"/>
+                                    <Area type="monotone" dataKey="atom" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.3} name="Exciton" isAnimationActive={false}/>
+                                    <Area type="monotone" dataKey="photon" stroke="#38bdf8" fill="#38bdf8" fillOpacity={0.3} name="Photon" isAnimationActive={false}/>
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [tab, setTab] = useState('pulse');
+            const [status, setStatus] = useState(false);
+            const [psi, setPsi] = useState(INITIAL_PSI);
+            useEffect(() => { const check = async () => { try{ await fetch('http://localhost:5000/status'); setStatus(true); } catch{ setStatus(false); } }; check(); setInterval(check, 5000); }, []);
+            return ( <div className="min-h-screen p-8 flex flex-col items-center max-w-7xl mx-auto"> <header className="mb-8 text-center"> <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600">Moiré Qubit Lab</h1> <div className={`text-xs mt-1 ${status?'text-emerald-400':'text-red-400'}`}>{status?'● Backend Online':'● Backend Offline'}</div> </header> <div className="flex gap-2 mb-6 bg-slate-900 p-1 rounded-lg"> {['pulse', 'physics', 'emission'].map(t => (<button key={t} onClick={()=>setTab(t)} className={`btn-tab ${tab===t?'btn-active':'btn-inactive'}`}>{t}</button>))} </div> <div className="w-full"> {tab==='pulse' && <PulseTab serverStatus={status} psi={psi} setPsi={setPsi}/>} {tab==='physics' && <PhysicsTab serverStatus={status}/>} {tab==='emission' && <EmissionTab serverStatus={status}/>} </div> </div> );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

@@ -178,6 +178,8 @@ def build_bilayer_bands(theta,mat_e, mat_h, ppnm):
         for k in range(2):
             point[f"c{k+1}"] = float(bands_e[i,k] + Ec)*1000
         fbands.append(point)
+    
+    
 
     return fbands, labels, {'X': Xh, 'Y': Yh, 'V': Vh.real}
 
