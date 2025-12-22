@@ -339,17 +339,14 @@ are in peer review at the time of writing.
 
 1. G. Wang et al., “Colloquium : Excitons in atomically thin transition
 metal dichalcogenides,” Reviews of Modern Physics, vol. 90, no. 2, Apr.
-2018,  
-doi: https://doi.org/10.1103/revmodphys.90.021001  
+2018, doi: https://doi.org/10.1103/revmodphys.90.021001  
   
 2. K. F. Mak and J. Shan, “Photonics and optoelectronics of 2D
 semiconductor transition metal dichalcogenides,” Nature Photonics, vol.
-10, no. 4, pp. 216–226, Mar. 2016,  
-doi: https://doi.org/10.1038/nphoton.2015.282  
+10, no. 4, pp. 216–226, Mar. 2016, doi: https://doi.org/10.1038/nphoton.2015.282  
   
 3. H. Baek et al., “Highly energy-tunable quantum light from
-moiré-trapped excitons,” Science advances, vol. 6, no. 37, Sep. 2020,
-doi: https://doi.org/10.1126/sciadv.aba8526  
+moiré-trapped excitons,” Science advances, vol. 6, no. 37, Sep. 2020, doi: https://doi.org/10.1126/sciadv.aba8526  
   
 4. H. Guo, X. Zhang, and G. Lu, “Shedding light on moiré excitons: A
 first-principles perspective,” Science Advances, vol. 6, no. 42, Oct.
@@ -357,21 +354,18 @@ first-principles perspective,” Science Advances, vol. 6, no. 42, Oct.
   
 5. T.-S. Huang, P. Lunts, and M. Hafezi, “Nonbosonic Moiré Excitons,”
 Physical Review Letters, vol. 132, no. 18, pp. 186202–186202, Apr.
-2024,  
-doi: https://doi.org/10.1103/physrevlett.132.186202.  
+2024, doi: https://doi.org/10.1103/physrevlett.132.186202.  
   
 6. L. Yuan et al., “Twist-angle-dependent interlayer exciton diffusion
 in WS2–WSe2 heterobilayers,” Nature Materials, vol. 19, no. 6, pp.
-617–623, May 2020,  
-doi: https://doi.org/10.1038/s41563-020-0670-3.  
+617–623, May 2020, doi: https://doi.org/10.1038/s41563-020-0670-3.  
   
 7. Y. Liu et al., ““Ideal” Topological Heavy Fermion Model in
 Two-dimensional Moiré Heterostructures with Type-II Band Alignment”,
 preprint, July 2025, arxiv: https://arxiv.org/pdf/2507.06168  
   
 8. Y. T. Wang et al., “Moiré cavity quantum electrodynamics,” Science
-Advances, vol. 11, no. 21, May 2025, doi:
-https://doi.org/10.1126/sciadv.adv8115.  
+Advances, vol. 11, no. 21, May 2025, doi: https://doi.org/10.1126/sciadv.adv8115.  
   
 9. H. Wang et al., “Quantum coherence and interference of a single moiré
 exciton in nano-fabricated twisted monolayer semiconductor
