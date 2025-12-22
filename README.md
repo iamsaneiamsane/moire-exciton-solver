@@ -70,6 +70,7 @@ model.
 
 <div class="definition">
 <a id="def-exciton"></a>
+  
 **Definition 1**. Excitons are quasiparticles that are electron-hole
 pairs bonded by coulomb forces. These quasiparticles define the physics
 of described device since coulomb forces are magnified by the quantum
@@ -99,6 +100,7 @@ interlayer excitons.
 
 <div class="definition">
 <a id="def-moire"></a>
+  
 **Definition 2**. The moiré superlattice is determined by the
 interference between the two hexagonal lattices twisted by angle
 $`\theta`$ and lattice mismatch $`\delta = \frac{|a_1-a_2|}{a_{avg}}`$.
@@ -160,6 +162,7 @@ few picoseconds to a relatively usable nanosecond timeframe.*
 
 <div class="definition">
 <a id="def-continuum"></a>
+  
 **Definition 3**. For a charge carrier in layer $`i`$, the effective
 mass Hamiltonian is:
 ``` math
@@ -189,6 +192,7 @@ t = -\frac{\hbar^2}{2m^* \Delta x^2}, \quad \epsilon = -4t
 
 <div class="definition">
 <a id="def-rabi"></a>
+  
 **Definition 4**. Qubit Control (Rabi Oscillations): When driving the
 qubit with a classical laser field $`\Omega \cos(\omega_L t)`$, the
 hamiltonian in the Rotating Wave Approximation is:
@@ -212,6 +216,7 @@ of the clifford group of quantum gates but that is left to the user.
 
 <div class="definition">
 <a id="def-jc"></a>
+  
 **Definition 5**. Quantum Optics (Jaynes-Cummings): To simulate single
 photon emissions, the system is coupled to a quantized cavity. The state
 occupies the Hilbert space
@@ -232,6 +237,7 @@ exchange.
 
 <div class="definition">
 <a id="def-decoherence"></a>
+  
 **Definition 6**. Decoherence and Decay (Lindblad Master Equation): The
 Gorini-Kossakowski-Sudarshan-Lindblad master equation is the most
 general generator of Markovian dynamics in quantum systems, and thus is
@@ -258,6 +264,7 @@ exciton decomposes into phonons.
 
 <div class="definition">
 <a id="def-purcell"></a>
+  
 **Definition 7**. The Purcell effect is a key concept in quantum
 photonics, due to its utility in controlling the rate of spontaneous
 emission. This helps enhance device efficiency and makes single photon
