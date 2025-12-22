@@ -46,7 +46,7 @@ touched on in a later section.
   
 Finally, there is a substantial lack of tools that help visualize moiré
 excitons and the physics associated with them. No comparable tool to the
-one outlined in this paper is known to the author at the time of
+one outlined in this repo is known to the author at the time of
 writing. A student looking to gain an understanding would have to
 painstakingly work through hundreds of pages worth of dense research
 papers to gain an intuition for which knobs to turn to induce desired
