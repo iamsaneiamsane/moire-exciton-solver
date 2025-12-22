@@ -1,0 +1,7 @@
+Flask==3.1.2
+flask_cors==6.0.1
+matplotlib==3.10.8
+numba==0.62.1
+numpy==2.4.0
+qutip==5.2.1
+scipy==1.16.3
