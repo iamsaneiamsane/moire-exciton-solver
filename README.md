@@ -317,7 +317,7 @@ The behavior is as expected with changes in $`\theta`$.
 
 # Conclusion and State of Current Research
 
-This paper outlines a satisfactorily accurate simulation platform for
+This repo outlines a satisfactorily accurate simulation platform for
 moiré excitons, with an interactive user interface that lends itself
 well to education.  
 Experimental research on this topic is thriving but slow despite being
@@ -327,7 +327,7 @@ predominantly on graphene based Moiré structures, and most papers
 concern themselves with mapping physics over building viable devices.  
 The simulation landscape is more vibrant, with a recent shift away from
 Hubbard models, which is the standard model used for many body physics.
-The model outlined in this paper generalizes to a Hubbard model at small
+The model outlined in this repo generalizes to a Hubbard model at small
 twist angles. It was seen that standard Bosonic Bose-Hubbard models
 predicted a greater number of interparticle interactions, while real
 moiré excitons were never seen to have over four interactions in TMD’s.
