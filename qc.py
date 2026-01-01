@@ -1,7 +1,7 @@
 from const import *
-from helper_funcs import *
+# from helper_funcs import * # Unused
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt # Unused
 from qutip import *
 
 class MoireQubit:
@@ -32,7 +32,7 @@ class MoireQubit:
             return .5*(det_*sigmaz() + rabi_*sigmax())
     
     
-    def evolve(self, psi0, rabi_amp, detuning, dur, pulse_width = None, steps=50, g=0.0, T1=None, T2=None):
+    def evolve(self, psi0, rabi_amp, detuning, dur, pulse_width = None, steps=100, g=0.0, T1=None, T2=None):
         hbar = .6582 #meV*ps
         cav=5
 
@@ -41,6 +41,7 @@ class MoireQubit:
         if pulse_width is None or pulse_width >=dur:
             pulse_width = dur
         s1 = int(steps*pulse_width/dur)
+        if s1 < 2: s1 = 2
         tlist = np.linspace(0, pulse_width, s1)
 
         if g > 0:
@@ -76,7 +77,7 @@ class MoireQubit:
             s2 = steps-s1
             if s2 < 2: s2 = 2
             tlist2 = np.linspace(pulse_width, dur, s2)
-            H2 = self.get_hamiltonian(0.0, detuning, g, cav)
+            H2 = self.get_hamiltonian(0.0, 0.0, g, cav)
             psi_ = result.states[-1]
             result2 = mesolve(H2, psi_, tlist2, cops, eops, options=Options(store_states=True))
 
@@ -95,7 +96,7 @@ class MoireQubit:
             res = result
             ft = tlist
 
-        fstatef = result.states[-1]
+        fstatef = res.states[-1]
         fstatea = fstatef.ptrace(0) if g > 0 else fstatef
         return ft, res, fstatea
     
@@ -111,28 +112,53 @@ class MoireQubit:
         cops = [np.sqrt(kap)*a, np.sqrt(gam)*sm]
 
         psi0 = tensor(basis(2,0), basis(cav,0))
-        tlist = np.linspace(0,dur,200)
+        tlist = np.linspace(0,dur,100)
 
         eops = [tensor(basis(2,0)*basis(2,0).dag(), qeye(cav)), a.dag()*a]
-        result = mesolve(H,psi0,tlist,cops,eops)
+        result = mesolve(H, psi0, tlist, c_ops=cops, e_ops=eops, options=Options(nsteps=5000))
         return tlist, result.expect[0], result.expect[1]
 
-    def plot_bloch(self, result):
-        b = Bloch()
-        b.add_points([result.expect[2], result.expect[1], result.expect[0]], meth="l")
-        b.zlabel = [r'$|1\rangle$', r'$|0\rangle$']
-        b.show()
-        plt.show(block=True)
+    def get_emission_statistics(self, g, kappa, gamma):
+        g_ = g/self.hbar
+        kap = kappa/self.hbar
+        gam = gamma/self.hbar
+        cav = 6 
 
-    def plot_pop(self, tlist, result):
-        P_exc = (result.expect[0]+1)/2
+        sm = tensor(sigmam(), qeye(cav))
+        sp = tensor(sigmap(), qeye(cav))
+        sz = tensor(sigmaz(), qeye(cav))
+        a = tensor(qeye(2), destroy(cav))
+        
+        H = g_*(a.dag()*sm + a*sm.dag())
+        U = g_ * 1.0 
+        H_kerr = U * a.dag() * a.dag() * a * a
+        H += H_kerr
 
-        plt.figure(figsize=(8,5))
-        plt.plot(tlist,P_exc,'b-',label=r'Excited State Population $\rho_{11}$')
-        plt.xlabel('t (ps)')
-        plt.ylabel('population')
-        plt.title("Rabi Oscillations")
-        plt.grid(True, linestyle='--', alpha=.6)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
+        Omega = kap * 1.5
+        H_drive = Omega * (sm + sp)
+        H += H_drive
+
+        cops = [np.sqrt(kap)*a, np.sqrt(gam)*sm]
+        
+        rho_ss = steadystate(H, cops)
+        wlist = np.linspace(-5*g_, 5*g_, 80)
+
+        try:
+            spec = spectrum(H, wlist, cops, a.dag(), a) 
+        except:
+            spec = np.zeros_like(wlist)
+        
+        # g2(tau)
+        tlist_g2 = np.linspace(0, 50, 40)
+        g2_tau = coherence_function_g2(H, rho_ss, tlist_g2, cops, a)[0]
+        
+        # Wigner Function
+        rho_cav = rho_ss.ptrace(1)
+        xvec = np.linspace(-3,3,30)
+        W = wigner(rho_cav, xvec, xvec)
+        
+        return {
+            'spectrum': {'w': wlist, 'S': spec},
+            'g2': {'tau': tlist_g2, 'val': np.real(g2_tau)},
+            'wigner': {'x': xvec, 'W': W}
+        }

@@ -35,7 +35,7 @@ class WS2: #UPDATE ALL PARAMETERS
     psi = 0
     eoff = -.3 #V
     hoff = -.4 #V
-
+'''
 class MoS2:
     a= 3.16
     me= .35*m0
@@ -46,4 +46,4 @@ class MoS2:
     Lm= 10
     V0= 30
 
-
+'''

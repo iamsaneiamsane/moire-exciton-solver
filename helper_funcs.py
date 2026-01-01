@@ -1,18 +1,13 @@
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from scipy.sparse import diags
 import numpy as np
 from qutip import Bloch, basis,sigmax,sigmay,sigmaz,sigmam,qeye,mesolve,expect,Qobj, tensor
 from const import *
 from numba import njit, prange
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from matplotlib.patches import RegularPolygon
-
 
 hb2mb = lambda m_eff: 0.0381 / m_eff
-
-
 
 def triangular_bounds(Lm, material, Nx,Ny,dx,dy, offset = 0, theta_deg=0.0, psi_deg = 0.0): #builds 2d triangular bounds
     xs = (np.arange(Nx) + .5)*dx
@@ -21,7 +16,7 @@ def triangular_bounds(Lm, material, Nx,Ny,dx,dy, offset = 0, theta_deg=0.0, psi_
     X,Y = np.meshgrid(xs,ys,indexing="ij")
 
     theta_rad = np.radians(float(theta_deg))
-    Xr = X*np.cos(theta_rad) - Y*np.cos(theta_rad)
+    Xr = X*np.cos(theta_rad) - Y*np.sin(theta_rad)
     Yr = X*np.sin(theta_rad) + Y*np.cos(theta_rad)
 
     Gmag = 4*np.pi/(np.sqrt(3)*Lm)

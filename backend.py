@@ -1,18 +1,27 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
-from qutip import Qobj, sigmax,sigmay,mesolve,basis
+from qutip import basis
 from qc import *
 from helper_funcs import *
 import pickle
 import os
 import json
 
+import sys
+import os
+
 app = Flask(__name__)
 CORS(app)
 h = .6582 #mev*ps
 current_qubit = None
-CACHE_DIR = "cache"
+
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+CACHE_DIR = os.path.join(base_path, "cache")
 
 
 class ComplexEncoder(json.JSONEncoder):
@@ -107,10 +116,13 @@ def handle_evolution():
     t1 = float(data.get('T1', 0))
     T1 = t1 if t1 > 0 else None
     
+    t2 = float(data.get('T2', 0))
+    T2 = t2 if t2 > 0 else None
+    
     pulse_width = data.get('pulse_width', None)
     if pulse_width: pulse_width = float(pulse_width)
 
-    t, res, final = current_qubit.evolve(psi0, omega, delta, duration, pulse_width=pulse_width, g=g, T1=T1)
+    t, res, final = current_qubit.evolve(psi0, omega, delta, duration, pulse_width=pulse_width, g=g, T1=T1, T2=T2)
     
     traj = []
     for i, ti in enumerate(t):
@@ -145,7 +157,12 @@ def handle_evolution():
 
 @app.route('/emission', methods=['POST'])
 def handle_emission():
-    if not current_qubit: return jsonify({"error": "Not initialized"}), 400
+    global current_qubit
+    if not current_qubit: 
+        current_qubit = init_qubit_logic(1.0)
+        if not current_qubit:
+            return jsonify({"error": "Initialization failed (Cache missing)"}), 500
+
     data = request.json
     
     g = float(data.get('g', 0.5))
@@ -153,9 +170,11 @@ def handle_emission():
     gamma = float(data.get('gamma', 0.1))
 
     t, atom, photon = current_qubit.simulate_emission(g, kappa, gamma, dur=20)
+    stats = current_qubit.get_emission_statistics(g, kappa, gamma)
     
     return jsonify(make_serializable({
-        'trajectory': [{'time': t[i], 'atom': atom[i], 'photon': photon[i]} for i in range(len(t))]
+        'trajectory': [{'time': t[i], 'atom': atom[i], 'photon': photon[i]} for i in range(len(t))],
+        'stats': stats
     }))
 
 if __name__ == '__main__':
